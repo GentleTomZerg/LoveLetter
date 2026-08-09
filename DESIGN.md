@@ -68,10 +68,10 @@ love-letter/
 
 - C→S: `createRoom {name, capacity}` · `joinRoom {roomCode, name}` · `playCard {which: 0|1}` · `choice {…}` · `nextRound` · `rematch` · `chat {text}`
 - S→C: `hello {playerId, roomCode}` · `snapshot {view}` · `event {…}` (stream) · `chat` · `error`
-- **Join flow**: server sends `hello` → `snapshot` (the player's private view, including their own hand) → then streams `event`s. A joiner's snapshot already reflects their own join (and any auto-start), so the join-triggered batch goes only to pre-existing sockets — no double-apply. Draw/deal events are public table state (the deck count, the shrink) but carry the card only to the named player — other recipients see `card: null`, while the authoritative room log keeps the full event.
+- **Join flow**: server sends `hello` → `snapshot` (the player's private view, including their own hand) → then streams `event`s. A joiner's snapshot already reflects their own join (and any auto-start), so the join-triggered batch goes only to pre-existing sockets — no double-apply. Draw/deal/peek events are public table state (the deck count, the shrink, a Priest's look) but carry the card only to the named player — other recipients see `card: null`, while the authoritative room log keeps the full event.
 - **Reconnect**: socket drops → 60s grace → if their turn comes and still gone, auto-fold out of the round; reconnect replays missed events from `lastEventId`; seat kept for next round. (Ticket 05 — reconnect/grace, plus chat, land there.)
 
-> Tracer scope (ticket 02): only the Guard resolves; the other seven cards play with no effect until ticket 03. The per-card dispatch in `resolvePlayedCard` means ticket 03 deepens, not rewires.
+> Engine status: complete for the original 16-card deck (tickets 02 + 03). All eight cards resolve in `resolvePlayedCard` — Guard/Priest/Baron/King/Prince ask for a target (and the Guard a card name) via `pendingChoice`; Handmaid protects; the Countess forces an immediate discard while holding the King/Prince; the Princess eliminates whoever discards her. Effects are mandatory even when self-destructive.
 
 ## Server
 
