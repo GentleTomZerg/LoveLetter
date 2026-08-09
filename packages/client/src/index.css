@@ -364,3 +364,8 @@ button:disabled {
 .log-reveal {
   color: var(--muted);
 }
+
+.log-peek,
+.log-discard {
+  color: var(--muted);
+}

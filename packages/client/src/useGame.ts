@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { reduceView } from '@love-letter/core';
-import type { ClientPacket, Rank, ServerPacket, ViewState } from '@love-letter/core';
+import type { Choice, ClientPacket, ServerPacket, ViewState } from '@love-letter/core';
 
 export type ConnStatus = 'connecting' | 'open' | 'closed';
 
@@ -85,7 +85,7 @@ export function useGame() {
   const sendPlayCard = useCallback((which: 0 | 1) => {
     send({ type: 'playCard', which });
   }, [send]);
-  const sendChoice = useCallback((choice: { targetPlayerId: string; namedRank: Rank }) => {
+  const sendChoice = useCallback((choice: Choice) => {
     send({ type: 'choice', choice });
   }, [send]);
   const sendNextRound = useCallback(() => send({ type: 'nextRound' }), [send]);

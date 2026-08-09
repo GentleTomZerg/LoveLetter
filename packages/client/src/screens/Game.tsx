@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CARD_INFO } from '@love-letter/core';
-import type { Card, LogEntry, PendingChoice, PlayerView, Rank, ViewState } from '@love-letter/core';
+import type { Card, Choice, LogEntry, PendingChoice, PlayerView, ViewState } from '@love-letter/core';
 import type { Game } from '../useGame';
 
 export function Game({ view, selfId, game }: { view: ViewState; selfId: string; game: Game }) {
@@ -115,9 +115,9 @@ function Scoreboard({ view, selfId }: { view: ViewState; selfId: string }) {
 }
 
 /**
- * Guard's two-step guess: pick a legal target, then name a card. The guess is
- * sent the moment a card is named; the local selection resets whenever the
- * pending choice changes.
+ * The two-step choice prompt: the Guard names a target then a card; the other
+ * four targeting cards just pick a target. The guess is sent the moment the
+ * last piece is chosen; the local selection resets on each new pending choice.
  */
 function ChoicePanel({
   pendingChoice,
@@ -128,26 +128,51 @@ function ChoicePanel({
   pendingChoice: PendingChoice;
   selfId: string;
   players: PlayerView[];
-  onChoice: (choice: { targetPlayerId: string; namedRank: Rank }) => void;
+  onChoice: (choice: Choice) => void;
 }) {
   const [targetId, setTargetId] = useState<string | null>(null);
   useEffect(() => setTargetId(null), [pendingChoice]);
-
-  if (pendingChoice.kind !== 'guard') return null;
 
   if (pendingChoice.playerId !== selfId) {
     const chooser = players.find((p) => p.id === pendingChoice.playerId)?.name ?? 'Someone';
     return <p className="choice-prompt muted">{chooser} is choosing…</p>;
   }
 
-  const targets = pendingChoice.targets.map((id) => players.find((p) => p.id === id)?.name ?? id);
+  const targetNames = pendingChoice.targets.map(
+    (id) => players.find((p) => p.id === id)?.name ?? id,
+  );
+
+  if (pendingChoice.kind !== 'guard') {
+    const label: Record<'priest' | 'baron' | 'prince' | 'king', string> = {
+      priest: 'Your Priest: whose hand do you want to see?',
+      baron: 'Your Baron: who do you challenge?',
+      prince: 'Your Prince: who discards and draws?',
+      king: 'Your King: who do you trade hands with?',
+    };
+    return (
+      <div className="panel choice">
+        <p className="choice-prompt">{label[pendingChoice.kind]}</p>
+        <div className="choice-row">
+          {pendingChoice.targets.map((id, i) => (
+            <button
+              key={id}
+              onClick={() => onChoice({ kind: pendingChoice.kind, targetPlayerId: id })}
+            >
+              {targetNames[i]}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="panel choice">
       <p className="choice-prompt">Your Guard: who do you accuse, and of holding what?</p>
       <div className="choice-row">
         {pendingChoice.targets.map((id, i) => (
           <button key={id} className={targetId === id ? 'selected' : ''} onClick={() => setTargetId(id)}>
-            {targets[i]}
+            {targetNames[i]}
           </button>
         ))}
       </div>
@@ -156,7 +181,7 @@ function ChoicePanel({
           {pendingChoice.namedOptions.map((rank) => (
             <button
               key={rank}
-              onClick={() => onChoice({ targetPlayerId: targetId, namedRank: rank })}
+              onClick={() => onChoice({ kind: 'guard', targetPlayerId: targetId, namedRank: rank })}
             >
               {CARD_INFO[rank].name}
             </button>
