@@ -96,7 +96,8 @@ love-letter/
 
 - **Card art: user-provided PNGs** in `packages/client/public/cards/` — one 903×1296 full-card image per rank (`1.png`–`8.png`), two card backs, and a logo. Files are rank-keyed so the image filenames never leak display names. (Source/license of the PNGs: TBD — confirm with the author before any public release; see the original game-icons plan below.)
 - Original plan (superseded): game-icons.net icons (CC BY 3.0) on our own card frames, with the required one-line attribution screen. Research verified no complete open-licensed Love Letter set exists.
-- **No proprietary art** and trademark-safe role titles only (no character names) still apply. Note: the provided rank-2 artwork is captioned "Spy" in its filename (the 2019 Z-Man name); the game displays the original 2012 name "Priest" regardless — regenerate that one if the art itself reads as a Spy.
+- **No proprietary art** and trademark-safe role titles only (no character names) still apply. Note: the provided rank-2 artwork is captioned "Spy" in its filename (the 2019 Z-Man name); the game displays the original 2012 name "Priest" regardless. Confirmed with the author (2025): the art itself reads as a Spy — regenerate/replace `client/public/cards/2.png` before any public release (the file is rank-keyed, so swapping the image is a drop-in change with no code edits).
+- **License status (2025):** the PNG set's provenance is unconfirmed (the author cannot verify the source; the images carry no metadata, and no verified-license complete Love Letter set exists per the art research). The set stays private — LAN play only. Any public release is blocked until the license is confirmed or the art is replaced with verified-licensed originals.
 
 ## Rules core facts
 
