@@ -80,6 +80,8 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
             )}
           </div>
 
+          <Abilities />
+
           <Log log={view.log} />
 
           {me && me.protected && <p className="badge protected-badge">You are protected by the Handmaid</p>}
@@ -173,6 +175,30 @@ function Discards({ players }: { players: PlayerView[] }) {
 }
 
 /**
+ * A collapsible reference of all eight cards and their effects (issue 12) —
+ * touch screens have no hover, so the tooltips are unreachable there. The
+ * desktop tooltips stay; this is the always-available version.
+ */
+function Abilities() {
+  const ranks: Rank[] = [1, 2, 3, 4, 5, 6, 7, 8];
+  return (
+    <details className="panel abilities">
+      <summary>Card abilities</summary>
+      <ul className="abilities-list">
+        {ranks.map((rank) => (
+          <li key={rank}>
+            <CardThumb rank={rank} className="ability-thumb" />
+            <span className="ability-text">
+              <strong>{CARD_INFO[rank].name}</strong> ({rank}) — {CARD_INFO[rank].effect}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
  * Room chat: a scrollable message list fed by `game.chat` (live relay + the
  * `chatLog` replay on resume) and a free-text input that sends through the
  * server relay. Enter submits; the send button stays disabled while empty.
@@ -215,6 +241,10 @@ function ChatPanel({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: stri
           }}
           placeholder="Say something…"
           maxLength={200}
+          autoCorrect="off"
+          autoCapitalize="sentences"
+          spellCheck={false}
+          autoComplete="off"
         />
         <button onClick={send} disabled={draft.trim().length === 0}>
           Send

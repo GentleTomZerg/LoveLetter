@@ -4,7 +4,7 @@
 
 **Blocked by:** none
 
-**Status:** needs-triage
+**Status:** resolved
 
 ## Symptom (reported from real play, iPhones)
 
@@ -22,6 +22,10 @@
 
 ## Acceptance
 
-- [ ] On a 375pt-wide iPhone, both Create room and Join room buttons are fully visible
-- [ ] Also verified at 320pt (small iPhone SE) and 430pt (Pro Max) widths
-- [ ] No regression on desktop
+- [x] On a 375pt-wide iPhone, both Create room and Join room buttons are fully visible
+- [x] Also verified at 320pt (small iPhone SE) and 430pt (Pro Max) widths
+- [x] No regression on desktop
+
+## Comments
+
+**Fixed (2025):** `.code-input` gained `min-width: 0` (inputs otherwise refuse to shrink below their intrinsic width, which the `letter-spacing: 0.2em` widens) and `.row` gained `flex-wrap: wrap` as a narrow-screen safety net (`index.css`). A headless regression check was added to ui-smoke — `runNarrowViewport` emulates 320/375/430px devices and asserts both Home buttons' bounding rects stay fully inside the viewport. All three widths pass; the rest of the ui-smoke suite (which exercises Home → Lobby → Game) stays green, so no desktop regression.

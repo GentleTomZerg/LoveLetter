@@ -105,6 +105,8 @@ button:disabled {
   display: flex;
   gap: 0.75rem;
   align-items: flex-end;
+  /* Narrow phones: wrap instead of clipping the trailing button (issue 10). */
+  flex-wrap: wrap;
 }
 
 .divider {
@@ -116,6 +118,10 @@ button:disabled {
 
 .code-input {
   flex: 1;
+  /* Inputs refuse to shrink below their intrinsic width (widened by the
+   * letter-spacing below); without this a narrow phone pushes the Join
+   * button off-screen (issue 10). */
+  min-width: 0;
   text-transform: uppercase;
   letter-spacing: 0.2em;
   font-weight: 700;
@@ -507,6 +513,50 @@ button:disabled {
     position: static;
     height: 22rem;
   }
+}
+
+/* --- Card abilities reference (issue 12) --- */
+
+.abilities {
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+}
+
+.abilities summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.abilities-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.abilities-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ability-thumb {
+  width: 2.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+  display: block;
+}
+
+.ability-text {
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 /* --- Log --- */

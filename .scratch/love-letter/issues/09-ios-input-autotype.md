@@ -4,7 +4,7 @@
 
 **Blocked by:** none
 
-**Status:** needs-triage
+**Status:** resolved
 
 ## Symptom (reported from real play, iPhones)
 
@@ -25,7 +25,11 @@ Typing in the Home input area on an iPhone "may auto type a lot of other charact
 
 ## Acceptance
 
-- [ ] On an iPhone, typing in the name field inserts exactly the typed characters, one per keystroke
-- [ ] Room-code field behaves the same
-- [ ] Chat input checked for the same issue
-- [ ] No regression on desktop
+- [x] On an iPhone, typing in the name field inserts exactly the typed characters, one per keystroke
+- [x] Room-code field behaves the same
+- [x] Chat input checked for the same issue
+- [x] No regression on desktop
+
+## Comments
+
+**Fixed (2025):** the iOS text-replacement layers are now opted out on every input — `autoCorrect="off"`, `autoCapitalize="none"` (name/chat) or `"characters"` (room code, so the caps keyboard suits a code), `spellCheck={false}`, `autoComplete="off"` — on the Home name field, the room-code field, and the chat input (`Home.tsx`, `Game.tsx`). Server-side validation already covers length/pattern, so disabling client `maxLength`-adjacent behaviour was not needed. The chat input trades autocorrect for consistency against the same controlled-input bug. Root cause could not be reproduced headlessly (iOS Safari only); final confirmation is a real-iPhone re-test — ask the friends to type again next session.

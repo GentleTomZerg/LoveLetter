@@ -158,6 +158,34 @@ const publicSnapshot = (tab: CdpSession) =>
   })`);
 
 // ---------------------------------------------------------------------------
+// Scenario 0 — narrow-phone layout (issue 10): no button may clip at the edge
+// ---------------------------------------------------------------------------
+
+async function runNarrowViewport(base: string, debugPort: number): Promise<void> {
+  for (const width of [320, 375, 430]) {
+    const [tab] = await openTabs(debugPort, 1);
+    await tab.setViewport(width, 568);
+    await tab.navigate(base);
+    await waitFor(tab, `document.querySelector('.screen.home') !== null`, 10000, `Home at ${width}px`);
+    await setInput(tab, '.home input[placeholder="e.g. Alice"]', 'Alice');
+    const buttons = (await tab.eval(`(() => {
+      const vw = window.innerWidth;
+      return [...document.querySelectorAll('.home button')].map((b) => {
+        const r = b.getBoundingClientRect();
+        return { text: b.textContent.trim(), left: r.left, right: r.right, vw };
+      });
+    })()`)) as Array<{ text: string; left: number; right: number; vw: number }>;
+    for (const b of buttons) {
+      assert.ok(
+        b.left >= 0 && b.right <= b.vw + 0.5,
+        `${b.text} clipped at ${b.vw}px (left ${b.left}, right ${b.right})`,
+      );
+    }
+    console.log(`  viewport ${width}px: ${buttons.map((b) => b.text).join(', ')} fully visible`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 1 — ticket 06 render claims
 // ---------------------------------------------------------------------------
 
@@ -170,6 +198,17 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
     await tabA.eval(`document.querySelectorAll('.scoreboard .seat')[0].textContent.includes('turn')`),
     true,
     'turn badge on the first seat',
+  );
+
+  // The abilities reference (issue 12) lists all eight cards once opened.
+  assert.equal(await tabA.eval(`document.querySelector('.abilities') !== null`), true, 'abilities panel present');
+  assert.equal(await tabA.eval(`document.querySelector('.abilities').open`), false, 'abilities panel collapsed');
+  await click(tabA, '.abilities summary');
+  await waitFor(tabA, `document.querySelector('.abilities').open === true`, 5000, 'abilities panel opens');
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.abilities-list li').length`),
+    8,
+    'all eight cards listed',
   );
 
   await playUntil([tabA, tabB], async () => (await nonEmptyPiles(tabA)) >= 2, 600);
@@ -341,6 +380,8 @@ async function main(): Promise<void> {
     chrome = await launchChrome(debugPort, profile);
     console.log(`[ui-smoke] serving ${STATIC_ROOT} on :${app.port}`);
 
+    console.log('[ui-smoke] narrow-phone layout (issue 10)…');
+    await runNarrowViewport(base, debugPort);
     console.log('[ui-smoke] render checks (Home → Lobby → Game, discards, chat)…');
     await runRenderChecks(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');
@@ -351,10 +392,9 @@ async function main(): Promise<void> {
     await runReloadResume(base, debugPort);
 
     console.log(
-      'UI SMOKE OK — render claims, full 2p match (all 8 cards) + rematch, 3p/4p token targets, '
-      + 'reload/resume with chat restored, no error banners anywhere',
-    );
-  } finally {
+      'UI SMOKE OK — narrow-phone layout, render claims, full 2p match (all 8 cards) + rematch, '
+      + '3p/4p token targets, reload/resume with chat restored, no error banners anywhere',
+    );  } finally {
     if (chrome) {
       chrome.kill();
       // Chrome's renderer helpers can outlive the main process briefly; give

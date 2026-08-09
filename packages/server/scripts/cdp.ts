@@ -23,6 +23,8 @@ export interface CdpSession {
   navigate(url: string): Promise<void>;
   reload(): Promise<void>;
   screenshot(path: string): Promise<void>;
+  /** Emulate a device viewport (CSS px) for layout checks. */
+  setViewport(width: number, height: number): Promise<void>;
 }
 
 /** Launch Chrome headless with remote debugging; resolves once it answers. */
@@ -101,6 +103,13 @@ export async function openTabs(debugPort: number, count: number): Promise<CdpSes
     },
     reload: async () => {
       await send('Page.reload', { ignoreCache: true }, sessionId);
+    },
+    setViewport: async (width: number, height: number) => {
+      await send(
+        'Emulation.setDeviceMetricsOverride',
+        { width, height, deviceScaleFactor: 2, mobile: true },
+        sessionId,
+      );
     },
     screenshot: async (path: string) => {
       const r = (await send('Page.captureScreenshot', { format: 'png' }, sessionId)) as { data: string };

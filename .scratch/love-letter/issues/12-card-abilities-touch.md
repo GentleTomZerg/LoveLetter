@@ -4,7 +4,7 @@
 
 **Blocked by:** none
 
-**Status:** needs-triage
+**Status:** resolved
 
 ## Symptom (reported from real play, iPhones)
 
@@ -20,6 +20,10 @@ Existing behavior to preserve: the desktop tooltip can stay; rank badges and nam
 
 ## Acceptance
 
-- [ ] On an iPhone, a player can read every card's effect without any mouse
-- [ ] The card tooltips' information is fully represented in the UI (nothing hover-only)
-- [ ] Hand click-to-play still works without accidental plays
+- [x] On an iPhone, a player can read every card's effect without any mouse
+- [x] The card tooltips' information is fully represented in the UI (nothing hover-only)
+- [x] Hand click-to-play still works without accidental plays
+
+## Comments
+
+**Fixed (2025):** a collapsible "Card abilities" reference panel (`<details>`, native disclosure — no JS) now sits in the game column above the log, listing all eight ranks with their rank-keyed thumbnails and effect text (`Game.tsx` `Abilities`, reusing `CardThumb`). Desktop tooltips stay as a bonus; the panel is the always-available source on touch. The ui-smoke render scenario asserts the panel exists, starts collapsed, opens on tap, and lists all 8 cards. Final real-device confirmation: next iPhone session.

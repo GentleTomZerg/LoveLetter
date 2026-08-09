@@ -40,6 +40,12 @@ export function Home({ game }: { game: Game }) {
             placeholder="e.g. Alice"
             maxLength={20}
             autoFocus
+            // iOS: autocorrect/autofill rewrite text inside controlled inputs
+            // (issue 09) — opt out of every mobile text-replacement layer.
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            autoComplete="off"
           />
         </label>
 
@@ -66,6 +72,10 @@ export function Home({ game }: { game: Game }) {
             placeholder="Room code"
             maxLength={4}
             className="code-input"
+            autoCorrect="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            autoComplete="off"
           />
           <button onClick={join} disabled={name.trim().length === 0 || roomCode.trim().length === 0}>
             Join room
