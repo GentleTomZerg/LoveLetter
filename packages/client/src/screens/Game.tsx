@@ -81,12 +81,12 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
           </div>
 
           <Log log={view.log} />
+
+          {me && me.protected && <p className="badge protected-badge">You are protected by the Handmaid</p>}
         </main>
 
         <ChatPanel chat={game.chat} selfId={selfId} onSend={game.sendChat} />
       </div>
-
-      {me && me.protected && <p className="badge protected-badge">You are protected by the Handmaid</p>}
     </div>
   );
 }
