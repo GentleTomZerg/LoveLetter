@@ -60,20 +60,23 @@ love-letter/
 ## Engine (`core`)
 
 - **State**: `phase` (lobby → round → roundEnded → matchEnded), per-player `{hand, protected, out, tokens, discardPile}`, `deck`, `burned` (face-down removed card), `faceUpRemoved` (2-player), `currentTurn`, `pendingChoice` (when an effect needs a target/guess).
-- **Flow**: clients send **intents** (`playCard`, `choice`, `rematch`) → `apply(state, intent)` validates, resolves effects step-by-step, returns `{state, events[]}`. Illegal intents rejected, never guessed at.
+- **Flow**: clients send **intents** (`playCard`, `choice`, `rematch`, plus `createRoom`/`joinRoom`/`nextRound`) → `apply(state, intent, rng?)` validates, resolves effects step-by-step, returns `{state, events[]}`. Illegal intents rejected, never guessed at. `apply` clones the state first (callers keep their reference) and is deterministic for a given `rng` — tests inject a seeded PRNG.
 - **Event log**: every transition appends events (`cardPlayed`, `choiceRequired`, `handRevealed`, `playerEliminated`, `roundEnded`, `matchEnded`, …). Log powers reconnect replay and debugging.
 - **Two-phase play**: some effects need a follow-up choice (Guard: pick player + name a card; Priest/Baron/Prince/King: pick player) → model `pendingChoice` states; the turn isn't over until resolved.
 
 ## Protocol (JSON over WebSocket)
 
-- C→S: `createRoom {name, capacity}` · `joinRoom {roomCode, name}` · `playCard {which: 0|1}` · `choice {...}` · `chat {text}` · `resume {playerId, lastEventId}`
-- S→C: `hello {playerId, roomCode}` · `event {…}` (stream) · `chat` · `error`
-- **Reconnect**: socket drops → 60s grace → if their turn comes and still gone, auto-fold out of the round; reconnect replays missed events from `lastEventId`; seat kept for next round.
+- C→S: `createRoom {name, capacity}` · `joinRoom {roomCode, name}` · `playCard {which: 0|1}` · `choice {…}` · `nextRound` · `rematch` · `chat {text}`
+- S→C: `hello {playerId, roomCode}` · `snapshot {view}` · `event {…}` (stream) · `chat` · `error`
+- **Join flow**: server sends `hello` → `snapshot` (the player's private view, including their own hand) → then streams `event`s. A joiner's snapshot already reflects their own join (and any auto-start), so the join-triggered batch goes only to pre-existing sockets — no double-apply. Draw/deal events are public table state (the deck count, the shrink) but carry the card only to the named player — other recipients see `card: null`, while the authoritative room log keeps the full event.
+- **Reconnect**: socket drops → 60s grace → if their turn comes and still gone, auto-fold out of the round; reconnect replays missed events from `lastEventId`; seat kept for next round. (Ticket 05 — reconnect/grace, plus chat, land there.)
+
+> Tracer scope (ticket 02): only the Guard resolves; the other seven cards play with no effect until ticket 03. The per-card dispatch in `resolvePlayedCard` means ticket 03 deepens, not rewires.
 
 ## Server
 
 - Node http server serving the client build + WS upgrade.
-- Room registry: `Map<roomCode, Room>`; Room = `{players, game state, event log, chat log}`. In-memory only.
+- Room registry: `Map<roomCode, Room>`; Room = `{code, state, sockets, event log}`. In-memory only.
 
 ## Client (React)
 
@@ -115,7 +118,7 @@ love-letter/
 3. **Guard self-targeting** → **disallowed**.
 4. **2-player Prince empty-deck draw** → the **single face-down burned card** (face-up removed cards are never drawn).
 
-Recorded as ADR-0001 (`docs/adr/0001-four-rules-rulings.md`).
+Recorded as ADR-0001 (`docs/adr/0001-four-rules-rulings.md`). Ruling 1 makes a second edge reachable — two players reaching the match target in the same round — resolved as ADR-0002 (`docs/adr/0002-match-winner-on-simultaneous-target.md`).
 
 ## Gotchas
 
