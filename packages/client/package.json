@@ -1,0 +1,25 @@
+{
+  "name": "@love-letter/client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Love Letter Online client — React app: Home → Lobby → Game, renders from the event stream.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@love-letter/core": "*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.4.0",
+    "typescript": "^5.8.0",
+    "vite": "^6.3.0"
+  }
+}

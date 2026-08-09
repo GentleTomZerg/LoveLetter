@@ -1,0 +1,22 @@
+{
+  "name": "@love-letter/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Love Letter Online server — Node http + ws, room registry, event log, reconnect, chat relay.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@love-letter/core": "*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}
