@@ -54,7 +54,7 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
     view = reduceView(view, { type: 'choiceRequired', playerId: SELF, pendingChoice: pending }, SELF);
     expect(view!.pendingChoice).toEqual(pending);
 
-    view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { targetPlayerId: OTHER, namedRank: 2 } }, SELF);
+    view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { kind: 'guard', targetPlayerId: OTHER, namedRank: 2 } }, SELF);
     expect(view!.pendingChoice).toBeNull();
 
     view = reduceView(view, { type: 'handRevealed', playerId: OTHER, card: card(2) }, SELF);
@@ -96,6 +96,66 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
     expect(view!.players.every((p) => p.tokens === 0)).toBe(true);
     expect(view!.roundNumber).toBe(0);
     expect(view!.matchWinnerId).toBeNull();
+  });
+
+  it('logs the new card events from the other player’s perspective', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+
+    view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { kind: 'prince', targetPlayerId: OTHER } }, SELF);
+    expect(view!.log.at(-1)!.text).toBe('You targeted Bob with the Prince');
+
+    view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { kind: 'prince', targetPlayerId: SELF } }, SELF);
+    expect(view!.log.at(-1)!.text).toBe('You targeted yourself with the Prince');
+
+    view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { kind: 'baron', targetPlayerId: OTHER } }, SELF);
+    expect(view!.log.at(-1)!.text).toBe('You compared hands with Bob');
+
+    view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { kind: 'king', targetPlayerId: OTHER } }, SELF);
+    expect(view!.log.at(-1)!.text).toBe('You traded hands with Bob');
+
+    view = reduceView(view, { type: 'cardDiscarded', playerId: OTHER, card: card(7), reason: 'countess' }, SELF);
+    expect(view!.log.at(-1)!.text).toBe('Bob discarded the Countess (forced)');
+    expect(view!.players[1]!.discardPile).toContainEqual(card(7));
+
+    view = reduceView(view, { type: 'cardDiscarded', playerId: OTHER, card: card(2), reason: 'prince' }, SELF);
+    expect(view!.log.at(-1)!.text).toBe('Bob discarded Priest (Prince)');
+
+    // the Priest peek: with the card for the chooser (self)…
+    view = reduceView(view, { type: 'handPeeked', playerId: SELF, targetPlayerId: OTHER, card: card(8) }, SELF);
+    expect(view!.log.at(-1)!.text).toBe("You looked at Bob's hand: Princess");
+    // …and without the card for everyone else
+    view = reduceView(view, { type: 'handPeeked', playerId: OTHER, targetPlayerId: SELF, card: null }, OTHER);
+    expect(view!.log.at(-1)!.text).toBe("You looked at Alice's hand");
+  });
+
+  it('keeps the viewer’s own hand in sync when cards leave it', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+    view = reduceView(view, { type: 'cardDealt', playerId: SELF, card: card(7) }, SELF);
+    view = reduceView(view, { type: 'cardDrawn', playerId: SELF, card: card(6) }, SELF);
+    expect(view!.hand).toEqual([card(7), card(6)]);
+
+    // forced Countess discard removes her from the hand
+    view = reduceView(view, { type: 'cardDiscarded', playerId: SELF, card: card(7), reason: 'countess' }, SELF);
+    expect(view!.hand).toEqual([card(6)]);
+
+    // a Prince'd discard removes the discarded card, keeping the rest
+    view = reduceView(view, { type: 'cardDiscarded', playerId: SELF, card: card(6), reason: 'prince' }, SELF);
+    expect(view!.hand).toEqual([]);
+
+    // a King trade replaces the whole hand with the received card
+    view = reduceView(view, { type: 'handTraded', playerId: SELF, card: card(3) }, SELF);
+    expect(view!.hand).toEqual([card(3)]);
+    // …but a trade by someone else never touches my hand
+    view = reduceView(view, { type: 'handTraded', playerId: OTHER, card: null }, SELF);
+    expect(view!.hand).toEqual([card(3)]);
+
+    // elimination reveals drop the revealed card from my hand
+    view = reduceView(view, { type: 'cardDealt', playerId: SELF, card: card(8) }, SELF);
+    view = reduceView(view, { type: 'cardDrawn', playerId: SELF, card: card(1) }, SELF);
+    view = reduceView(view, { type: 'handRevealed', playerId: SELF, card: card(1) }, SELF);
+    expect(view!.hand).toEqual([card(8)]);
   });
 
   it('returns null when there is no view yet (events before snapshot)', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { apply } from '../src/index.js';
 import type { ApplyResult, Event, GameState } from '../src/index.js';
-import { card, deckOf, eventsOf, makeGame, p } from './helpers.js';
+import { card, deckOf, eventsOf, guardChoice, makeGame, p } from './helpers.js';
 
 /**
  * Play A's Guard then resolve the guess, driving the round to its end.
@@ -10,7 +10,7 @@ import { card, deckOf, eventsOf, makeGame, p } from './helpers.js';
 function playGuardAndMiss(s: GameState): { ok: true; state: GameState; events: Event[] } {
   let result = apply(s, { type: 'playCard', playerId: 'A', which: 0 });
   if (!result.ok) throw new Error(result.error);
-  result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: result.state.pendingChoice!.targets[0]!, namedRank: 8 } });
+  result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice(result.state.pendingChoice!.targets[0]!, 8) });
   if (!result.ok) throw new Error(result.error);
   return result;
 }
@@ -90,7 +90,7 @@ describe('round end: last player standing', () => {
     const s = makeGame([p('A', { hand: [card(1), card(1)] }), p('B', { hand: [card(2)] })], { deck: deckOf(5, 6, 7) });
     let result = apply(s, { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 2) });
     if (!result.ok) throw new Error(result.error);
     expect(eventsOf(result.events, 'roundEnded')[0]).toMatchObject({ winnerIds: ['A'], reason: 'last-standing' });
     expect(result.state.phase).toBe('roundEnded');
@@ -104,7 +104,7 @@ describe('roundEnded phase and nextRound', () => {
       { type: 'playCard', playerId: 'A', which: 0 },
     );
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 2) });
     if (!result.ok) throw new Error(result.error);
     const round1 = result.state;
     expect(round1.phase).toBe('roundEnded');

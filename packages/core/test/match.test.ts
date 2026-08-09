@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { apply } from '../src/index.js';
-import { card, eventsOf, makeGame, p, seededRng } from './helpers.js';
+import { card, eventsOf, guardChoice, makeGame, p, seededRng } from './helpers.js';
 
 /** A match configured to end after a single round win. */
 function nearTargetGame() {
@@ -20,7 +20,7 @@ describe('match end', () => {
   it('ends the match when a player reaches the token target', () => {
     let result = apply(nearTargetGame(), { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 2) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.phase).toBe('matchEnded');
@@ -40,7 +40,7 @@ describe('match end', () => {
     );
     let result = apply(s, { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 8 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 8) });
     if (!result.ok) throw new Error(result.error);
     expect(eventsOf(result.events, 'roundEnded')[0]).toMatchObject({ winnerIds: ['A', 'B'] });
     expect(result.state.players.every((p) => p.tokens === 1)).toBe(true);
@@ -54,7 +54,7 @@ describe('rematch', () => {
     const rng = seededRng(3);
     let result = apply(nearTargetGame(), { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 2) });
     if (!result.ok) throw new Error(result.error);
     expect(result.state.phase).toBe('matchEnded');
 
@@ -81,7 +81,7 @@ describe('rematch', () => {
   it('rejects nextRound once the match has ended', () => {
     let result = apply(nearTargetGame(), { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 2) });
     if (!result.ok) throw new Error(result.error);
     const done = apply(result.state, { type: 'nextRound', playerId: 'A' });
     expect(done).toMatchObject({ ok: false });

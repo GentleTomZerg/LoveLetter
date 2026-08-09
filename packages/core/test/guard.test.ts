@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { apply } from '../src/index.js';
 import type { GameState } from '../src/index.js';
-import { card, deckOf, eventsOf, makeGame, p, seededRng } from './helpers.js';
+import { card, deckOf, eventsOf, guardChoice, makeGame, p, seededRng } from './helpers.js';
 
 const rng = seededRng(1);
 
@@ -21,7 +21,7 @@ describe('Guard: playing the card', () => {
       targets: ['B'],
     });
     // Guard may never be named: options exclude rank 1
-    expect(result.state.pendingChoice!.namedOptions).toEqual([2, 3, 4, 5, 6, 7, 8]);
+    expect(result.state.pendingChoice).toMatchObject({ kind: 'guard', namedOptions: [2, 3, 4, 5, 6, 7, 8] });
     expect(eventsOf(result.events, 'cardPlayed')[0]).toMatchObject({ playerId: 'A', card: card(1) });
     expect(eventsOf(result.events, 'choiceRequired')).toHaveLength(1);
   });
@@ -63,7 +63,7 @@ describe('Guard: resolving the guess', () => {
   it('correct guess eliminates the target and reveals their hand (2p ends the round)', () => {
     let result = apply(guardRound(), { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 2) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(eventsOf(result.events, 'handRevealed')).toEqual([{ type: 'handRevealed', playerId: 'B', card: card(2) }]);
@@ -80,7 +80,7 @@ describe('Guard: resolving the guess', () => {
   it('wrong guess changes nothing and passes the turn', () => {
     let result = apply(guardRound(), { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 8 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 8) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(eventsOf(result.events, 'handRevealed')).toHaveLength(0);
@@ -94,7 +94,7 @@ describe('Guard: resolving the guess', () => {
   it('rejects naming the Guard (Guard may never be named)', () => {
     let result = apply(guardRound(), { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 1 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 1) });
     expect(result).toMatchObject({ ok: false });
   });
 
@@ -103,26 +103,26 @@ describe('Guard: resolving the guess', () => {
     if (!result.ok) throw new Error(result.error);
     // the pending choice never lists yourself as a legal target
     expect(result.state.pendingChoice!.targets).not.toContain('A');
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'A', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('A', 2) });
     expect(result).toMatchObject({ ok: false });
   });
 
   it('rejects a target that is not a legal option', () => {
     let result = apply(guardRound(), { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'NOPE', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('NOPE', 2) });
     expect(result).toMatchObject({ ok: false });
   });
 
   it('rejects a choice when none is pending', () => {
-    const result = apply(guardRound(), { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 2 } });
+    const result = apply(guardRound(), { type: 'choice', playerId: 'A', choice: guardChoice('B', 2) });
     expect(result).toMatchObject({ ok: false });
   });
 
   it('rejects a choice made by someone else', () => {
     let result = apply(guardRound(), { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'B', choice: { targetPlayerId: 'A', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'B', choice: guardChoice('A', 2) });
     expect(result).toMatchObject({ ok: false });
   });
 
@@ -152,7 +152,7 @@ describe('Guard in a 3-player round', () => {
     );
     let result = apply(s, { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
-    result = apply(result.state, { type: 'choice', playerId: 'A', choice: { targetPlayerId: 'B', namedRank: 2 } });
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 2) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(eventsOf(result.events, 'roundEnded')).toHaveLength(0);

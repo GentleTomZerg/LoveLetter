@@ -9,7 +9,6 @@
 
 import { CARD_INFO } from './cards.js';
 import type { Card, Event, GameState, PendingChoice, Phase } from './types.js';
-
 export interface PlayerView {
   id: string;
   name: string;
@@ -20,7 +19,7 @@ export interface PlayerView {
   discardPile: Card[];
 }
 
-export type LogKind = 'play' | 'fizzle' | 'choice' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'info';
+export type LogKind = 'play' | 'fizzle' | 'choice' | 'peek' | 'discard' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'info';
 
 export interface LogEntry {
   id: number;
@@ -78,6 +77,15 @@ export function buildView(state: GameState, selfId: string): ViewState {
   };
 }
 
+/** Remove a single card equal to `card` from the hand (duplicates allowed). */
+function removeCard(hand: Card[], card: Card): Card[] {
+  const index = hand.findIndex((c) => c.rank === card.rank && c.name === card.name);
+  if (index === -1) return hand;
+  const next = [...hand];
+  next.splice(index, 1);
+  return next;
+}
+
 /**
  * Fold one event into the view. The server only ever sends a player their own
  * private events (`cardDealt`, `cardDrawn`), so the fold can trust them.
@@ -88,6 +96,7 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
 
   const name = (id: string) =>
     id === selfId ? 'You' : (v.players.find((p) => p.id === id)?.name ?? id);
+  const targetName = (id: string) => (id === selfId ? 'yourself' : name(id));
   const log = (kind: LogKind, text: string) => {
     v.logSeq += 1;
     v.log.push({ id: v.logSeq, kind, text });
@@ -179,14 +188,56 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
 
     case 'choiceMade': {
       v.pendingChoice = null;
-      const named = CARD_INFO[event.choice.namedRank]?.name ?? `rank ${event.choice.namedRank}`;
-      log('choice', `${name(event.playerId)} guessed ${name(event.choice.targetPlayerId)} has ${named}`);
+      const c = event.choice;
+      let text = '';
+      switch (c.kind) {
+        case 'guard':
+          text = `${name(event.playerId)} guessed ${name(c.targetPlayerId)} has ${CARD_INFO[c.namedRank]?.name ?? `rank ${c.namedRank}`}`;
+          break;
+        case 'priest':
+          break; // the peek event carries the interesting log line
+        case 'baron':
+          text = `${name(event.playerId)} compared hands with ${name(c.targetPlayerId)}`;
+          break;
+        case 'prince':
+          text = `${name(event.playerId)} targeted ${targetName(c.targetPlayerId)} with the Prince`;
+          break;
+        case 'king':
+          text = `${name(event.playerId)} traded hands with ${name(c.targetPlayerId)}`;
+          break;
+      }
+      if (text !== '') log('choice', text);
+      break;
+    }
+
+    case 'handTraded':
+      // A trade replaces your whole hand; others only learn it happened.
+      if (event.playerId === selfId && event.card) v.hand = [event.card];
+      break;
+
+    case 'handPeeked':
+      if (event.playerId === selfId) {
+        const card = event.card ? `: ${event.card.name}` : '';
+        log('peek', `You looked at ${name(event.targetPlayerId)}'s hand${card}`);
+      } else {
+        log('peek', `${name(event.playerId)} looked at ${name(event.targetPlayerId)}'s hand`);
+      }
+      break;
+
+    case 'cardDiscarded': {
+      const player = v.players.find((p) => p.id === event.playerId);
+      if (player) player.discardPile = [...player.discardPile, event.card];
+      if (event.playerId === selfId) v.hand = removeCard(v.hand, event.card);
+      log('discard', event.reason === 'countess'
+        ? `${name(event.playerId)} discarded the Countess (forced)`
+        : `${name(event.playerId)} discarded ${event.card.name} (Prince)`);
       break;
     }
 
     case 'handRevealed': {
       const player = v.players.find((p) => p.id === event.playerId);
       if (player) player.discardPile = [...player.discardPile, event.card];
+      if (event.playerId === selfId) v.hand = removeCard(v.hand, event.card);
       log('reveal', `${name(event.playerId)} revealed ${event.card.name}`);
       break;
     }

@@ -5,7 +5,7 @@
  * itself — the server stamps the acting playerId from the socket connection.
  */
 
-import type { Event, GuardChoice } from './types.js';
+import type { Choice, Event } from './types.js';
 import type { ViewState } from './view.js';
 
 /** Client → server. */
@@ -13,7 +13,7 @@ export type ClientPacket =
   | { type: 'createRoom'; name: string; capacity: number }
   | { type: 'joinRoom'; roomCode: string; name: string }
   | { type: 'playCard'; which: 0 | 1 }
-  | { type: 'choice'; choice: GuardChoice }
+  | { type: 'choice'; choice: Choice }
   | { type: 'nextRound' }
   | { type: 'rematch' };
 

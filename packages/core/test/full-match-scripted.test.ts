@@ -16,17 +16,29 @@ function pick<T>(items: readonly T[], rng: () => number): T {
 /** The next legal intent a random (but honest) player would send. */
 function randomIntent(s: GameState, rng: () => number): Intent {
   if (s.phase === 'roundEnded') return { type: 'nextRound', playerId: s.players[0]!.id };
-  if (s.pendingChoice !== null) {
+  const pc = s.pendingChoice;
+  if (pc !== null) {
+    if (pc.kind === 'guard') {
+      return {
+        type: 'choice',
+        playerId: pc.playerId,
+        choice: {
+          kind: 'guard',
+          targetPlayerId: pick(pc.targets, rng),
+          namedRank: pick(pc.namedOptions, rng),
+        },
+      };
+    }
     return {
       type: 'choice',
-      playerId: s.pendingChoice.playerId,
-      choice: {
-        targetPlayerId: pick(s.pendingChoice.targets, rng),
-        namedRank: pick(s.pendingChoice.namedOptions, rng),
-      },
+      playerId: pc.playerId,
+      choice: { kind: pc.kind, targetPlayerId: pick(pc.targets, rng) },
     };
   }
-  return { type: 'playCard', playerId: s.currentTurn!, which: rng() < 0.5 ? 0 : 1 };
+  const actor = s.players.find((p) => p.id === s.currentTurn)!;
+  // A hand can have one card (after a forced Countess discard).
+  const which = actor.hand.length > 1 && rng() < 0.5 ? 1 : 0;
+  return { type: 'playCard', playerId: s.currentTurn!, which };
 }
 
 function runMatch(seed: number, capacity: 2 | 3 | 4): { state: GameState; events: Event[]; steps: number } {
@@ -62,7 +74,7 @@ function runMatch(seed: number, capacity: 2 | 3 | 4): { state: GameState; events
   return { state, events, steps };
 }
 
-describe('random-play full-match simulation (Guard-only tracer)', () => {
+describe('random-play full-match simulation (full 16-card deck)', () => {
   for (const capacity of [2, 3, 4] as const) {
     const target = defaultTokenTarget(capacity);
     it(`terminates with a winner at ${target} tokens for ${capacity} players`, () => {
@@ -90,6 +102,20 @@ describe('random-play full-match simulation (Guard-only tracer)', () => {
       expect(winner.tokens).toBe(7);
       expect(eventsOf(events, 'roundStarted').length).toBeGreaterThanOrEqual(7);
     }
+  });
+
+  it('every card type resolves without rejection over a batch of matches', () => {
+    const resolved = new Set<number>();
+    let applies = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const { events } = runMatch(seed, 2);
+      applies += events.length;
+      for (const e of events) {
+        if (e.type === 'cardPlayed' || e.type === 'cardDiscarded') resolved.add(e.card.rank);
+      }
+    }
+    expect(resolved).toEqual(new Set([1, 2, 3, 4, 5, 6, 7, 8]));
+    expect(applies).toBeGreaterThan(400); // a healthy number of transitions
   });
 
   it('rematch after the sim resets to a fresh round 1 with the same seats', () => {

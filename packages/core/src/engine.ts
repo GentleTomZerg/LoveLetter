@@ -3,9 +3,10 @@
  * resulting effects step-by-step, and returns `{ state, events[] }`. Illegal
  * intents are rejected with a human-readable error — never guessed at.
  *
- * Tracer scope (ticket 02): only the Guard resolves. The other seven cards
- * play with no effect until ticket 03 (their effects land there without
- * rewiring — each effect is dispatched from `resolvePlayedCard`).
+ * All eight cards resolve here (ticket 03): Guard/Priest/Baron/King and
+ * Prince ask for a target (and the Guard a card name) via `pendingChoice`;
+ * Handmaid protects; the Countess forces an immediate discard while holding
+ * the King/Prince; the Princess eliminates whoever discards her.
  *
  * The engine is deterministic: all randomness flows through the injected
  * `rng`, and `apply` clones the incoming state before mutating, so callers
@@ -16,13 +17,15 @@ import { buildDeck } from './cards.js';
 import { shuffle } from './random.js';
 import type {
   Card,
+  Choice,
+  EliminationReason,
   Event,
   GameState,
-  GuardChoice,
   Intent,
   PendingChoice,
   PlayerState,
   Rank,
+  TargetKind,
 } from './types.js';
 
 export type ApplyResult =
@@ -43,6 +46,10 @@ const MAX_NAME_LENGTH = 20;
 const ROOM_CODE_PATTERN = /^[A-Z0-9]{4}$/;
 /** A Guard may name any card except the Guard itself (rules spec §4.1). */
 const GUARD_NAMED_OPTIONS: Rank[] = [2, 3, 4, 5, 6, 7, 8];
+/** Ranks whose combination with the Countess forces her discard (§4.7). */
+const ROYAL_RANKS: ReadonlySet<Rank> = new Set([5, 6]);
+const COUNTESS: Rank = 7;
+const PRINCESS: Rank = 8;
 
 /**
  * Validate and apply an intent to the state, returning the new state and the
@@ -146,6 +153,9 @@ function playCard(s: GameState, intent: Extract<Intent, { type: 'playCard' }>): 
   if (intent.which !== 0 && intent.which !== 1) return err('invalid hand index');
   const card = actor.hand[intent.which];
   if (!card) return err('no card at that hand index');
+  // The engine forces the Countess discard at every hand change, so this state
+  // should never occur — but never play through an illegal hand (rules §4.7).
+  if (holdsCountessWithRoyal(actor)) return err('the Countess must be discarded when you hold the King or Prince');
 
   actor.hand.splice(intent.which, 1);
   actor.discardPile.push(card);
@@ -157,34 +167,88 @@ function playCard(s: GameState, intent: Extract<Intent, { type: 'playCard' }>): 
 }
 
 /**
- * Dispatch the played card's effect. Only the Guard exists in the tracer;
- * every other card is a deliberate no-op until ticket 03 implements it.
+ * Dispatch the played card's effect. Effects are mandatory, even when
+ * self-destructive (rules spec §8.7). Cards that need a follow-up choice set
+ * `pendingChoice`; the turn is not over until it resolves.
  */
 function resolvePlayedCard(s: GameState, actor: PlayerState, card: Card, events: Event[]): void {
   switch (card.rank) {
-    case 1: {
-      // Guard: choose a player (not yourself, not protected, in the round)
-      // and name a card other than Guard (ruling 3: self-targeting is illegal).
-      const targets = s.players
+    case 1: // Guard — name a target and a card
+      chooseTarget(s, actor, card, events, 'guard');
+      break;
+    case 2: // Priest — look at one player's hand, chooser only
+      chooseTarget(s, actor, card, events, 'priest');
+      break;
+    case 3: // Baron — compare hands, lower rank is out
+      chooseTarget(s, actor, card, events, 'baron');
+      break;
+    case 4: // Handmaid — immune to others' cards until your next turn
+      actor.protected = true;
+      finishTurn(s, events);
+      break;
+    case 5: // Prince — target discards and draws
+      chooseTarget(s, actor, card, events, 'prince');
+      break;
+    case 6: // King — trade hands
+      chooseTarget(s, actor, card, events, 'king');
+      break;
+    case 7: // Countess — no effect when discarded
+      finishTurn(s, events);
+      break;
+    case 8: // Princess — discarded for any reason → out of the round
+      eliminate(s, actor.id, 'princess', events);
+      finishTurn(s, events);
+      break;
+  }
+}
+
+/**
+ * Compute the legal targets for a targeting card and, if any, store the
+ * pending choice. With every other player protected these cards fizzle
+ * (rules spec §5: Guard/Priest/Baron/King do nothing; only the Prince is
+ * always actionable, because it may target yourself).
+ */
+function chooseTarget(
+  s: GameState,
+  actor: PlayerState,
+  card: Card,
+  events: Event[],
+  kind: TargetKind,
+): void {
+  const targets = legalTargets(s, actor, kind);
+  if (targets.length === 0) {
+    events.push({ type: 'cardFizzled', playerId: actor.id, card });
+    finishTurn(s, events);
+    return;
+  }
+  const pendingChoice: PendingChoice =
+    kind === 'guard'
+      ? { kind: 'guard', playerId: actor.id, targets, namedOptions: GUARD_NAMED_OPTIONS }
+      : { kind, playerId: actor.id, targets };
+  s.pendingChoice = pendingChoice;
+  events.push({ type: 'choiceRequired', playerId: actor.id, pendingChoice });
+}
+
+function legalTargets(
+  s: GameState,
+  actor: PlayerState,
+  kind: TargetKind,
+): string[] {
+  switch (kind) {
+    case 'prince':
+      // Any in-round player, including yourself; a protected player blocks
+      // everyone except their own Prince (rules spec §4.5, §5).
+      return s.players
+        .filter((p) => !p.out && (p.id === actor.id || !p.protected))
+        .map((p) => p.id);
+    case 'guard':
+    case 'priest':
+    case 'baron':
+    case 'king':
+      // These four target only other, unprotected players in the round.
+      return s.players
         .filter((p) => !p.out && p.id !== actor.id && !p.protected)
         .map((p) => p.id);
-      if (targets.length === 0) {
-        events.push({ type: 'cardFizzled', playerId: actor.id, card });
-        finishTurn(s, events);
-        break;
-      }
-      s.pendingChoice = {
-        kind: 'guard',
-        playerId: actor.id,
-        targets,
-        namedOptions: GUARD_NAMED_OPTIONS,
-      };
-      events.push({ type: 'choiceRequired', playerId: actor.id, pendingChoice: s.pendingChoice });
-      break;
-    }
-    default:
-      // Ticket 03: Priest, Baron, Handmaid, Prince, King, Countess, Princess.
-      finishTurn(s, events);
   }
 }
 
@@ -193,35 +257,135 @@ function makeChoice(s: GameState, intent: Extract<Intent, { type: 'choice' }>): 
   const pc = s.pendingChoice;
   if (pc === null) return err('no pending choice');
   if (pc.playerId !== intent.playerId) return err('not your choice to make');
-
-  if (pc.kind === 'guard') {
-    const choice = intent.choice as GuardChoice;
-    if (!pc.targets.includes(choice.targetPlayerId)) return err('illegal target');
-    if (!pc.namedOptions.includes(choice.namedRank)) return err('illegal named card');
-
-    const events: Event[] = [
-      { type: 'choiceMade', playerId: pc.playerId, choice },
-    ];
-    const target = findPlayer(s, choice.targetPlayerId);
-    if (target && target.hand.some((c) => c.rank === choice.namedRank)) {
-      // Correct guess: the target is out and their hand is revealed face-up.
-      const revealed = target.hand;
-      target.hand = [];
-      target.discardPile.push(...revealed);
-      target.out = true;
-      for (const card of revealed) {
-        events.push({ type: 'handRevealed', playerId: target.id, card });
-      }
-      events.push({ type: 'playerEliminated', playerId: target.id, reason: 'guard' });
-    }
-    // A wrong guess reveals nothing and changes nothing else.
-    s.pendingChoice = null;
-    finishTurn(s, events);
-    return ok(s, events);
+  if (pc.kind !== intent.choice.kind) return err('choice does not match the pending choice');
+  if (!pc.targets.includes(intent.choice.targetPlayerId)) return err('illegal target');
+  if (pc.kind === 'guard'
+    && !pc.namedOptions.includes((intent.choice as Extract<Choice, { kind: 'guard' }>).namedRank)) {
+    return err('illegal named card');
   }
 
-  // Other pendingChoice kinds arrive in ticket 03 (Priest/Baron/Prince/King).
-  return err('unsupported pending choice');
+  const events: Event[] = [{ type: 'choiceMade', playerId: pc.playerId, choice: intent.choice }];
+  switch (pc.kind) {
+    case 'guard':
+      resolveGuardChoice(s, intent.choice as Extract<Choice, { kind: 'guard' }>, events);
+      break;
+    case 'priest':
+      resolvePriestChoice(s, pc.playerId, intent.choice as Extract<Choice, { kind: 'priest' }>, events);
+      break;
+    case 'baron':
+      resolveBaronChoice(s, pc.playerId, intent.choice as Extract<Choice, { kind: 'baron' }>, events);
+      break;
+    case 'prince':
+      resolvePrinceChoice(s, intent.choice as Extract<Choice, { kind: 'prince' }>, events);
+      break;
+    case 'king':
+      resolveKingChoice(s, pc.playerId, intent.choice as Extract<Choice, { kind: 'king' }>, events);
+      break;
+  }
+  s.pendingChoice = null;
+  finishTurn(s, events);
+  return ok(s, events);
+}
+
+/** Guard: a correct guess eliminates the target and reveals their hand. */
+function resolveGuardChoice(
+  s: GameState,
+  choice: Extract<Choice, { kind: 'guard' }>,
+  events: Event[],
+): void {
+  const target = findPlayer(s, choice.targetPlayerId);
+  if (target && target.hand.some((c) => c.rank === choice.namedRank)) {
+    eliminate(s, target.id, 'guard', events);
+  }
+  // A wrong guess reveals nothing and changes nothing else.
+}
+
+/** Priest: the chooser alone sees the target's hand (rules spec §4.2). */
+function resolvePriestChoice(
+  s: GameState,
+  chooserId: string,
+  choice: Extract<Choice, { kind: 'priest' }>,
+  events: Event[],
+): void {
+  const target = findPlayer(s, choice.targetPlayerId);
+  if (!target) return;
+  for (const card of target.hand) {
+    // card is private: the server sends it only to the chooser.
+    events.push({ type: 'handPeeked', playerId: chooserId, targetPlayerId: target.id, card });
+  }
+}
+
+/** Baron: compare the remaining hands; lower rank is out, tie → nothing. */
+function resolveBaronChoice(
+  s: GameState,
+  chooserId: string,
+  choice: Extract<Choice, { kind: 'baron' }>,
+  events: Event[],
+): void {
+  const actor = findPlayer(s, chooserId)!;
+  const target = findPlayer(s, choice.targetPlayerId)!;
+  const actorRank = Math.max(...actor.hand.map((c) => c.rank), 0);
+  const targetRank = Math.max(...target.hand.map((c) => c.rank), 0);
+  // A Baron can knock out the player who played it — effects are mandatory
+  // even when self-destructive (rules spec §4.3, §8.7).
+  if (actorRank < targetRank) eliminate(s, actor.id, 'baron', events);
+  else if (targetRank < actorRank) eliminate(s, target.id, 'baron', events);
+}
+
+/**
+ * Prince: the target discards their hand face up (no effect) and draws a new
+ * card; on an empty deck the single burned card (ruling 4). Discarding the
+ * Princess — no matter how or why — is an elimination with no replacement
+ * draw (rules spec §8.2).
+ */
+function resolvePrinceChoice(
+  s: GameState,
+  choice: Extract<Choice, { kind: 'prince' }>,
+  events: Event[],
+): void {
+  const target = findPlayer(s, choice.targetPlayerId)!;
+  const discarded = target.hand;
+  target.hand = [];
+  for (const card of discarded) {
+    target.discardPile.push(card);
+    events.push({ type: 'cardDiscarded', playerId: target.id, card, reason: 'prince' });
+  }
+  if (discarded.some((c) => c.rank === PRINCESS)) {
+    target.out = true;
+    events.push({ type: 'playerEliminated', playerId: target.id, reason: 'princess' });
+    return;
+  }
+  const drawn = drawCard(s);
+  if (drawn !== null) {
+    target.hand.push(drawn);
+    events.push({ type: 'cardDrawn', playerId: target.id, card: drawn });
+    enforceCountess(s, target.id, events);
+  }
+}
+
+/**
+ * King: swap hands — a trade is not a discard, so the Princess may change
+ * hands freely. A King/Prince received while holding the Countess forces her
+ * immediate discard (ruling 2), checked for both players after the swap.
+ */
+function resolveKingChoice(
+  s: GameState,
+  chooserId: string,
+  choice: Extract<Choice, { kind: 'king' }>,
+  events: Event[],
+): void {
+  const actor = findPlayer(s, chooserId)!;
+  const target = findPlayer(s, choice.targetPlayerId)!;
+  const tmp = actor.hand;
+  actor.hand = target.hand;
+  target.hand = tmp;
+  // Each trader learns the card they received; others only see that a trade
+  // happened (the card payload is private, like deals and draws).
+  for (const [id, hand] of [[actor.id, actor.hand], [target.id, target.hand]] as const) {
+    events.push({ type: 'handTraded', playerId: id, card: hand[0] ?? null });
+  }
+  enforceCountess(s, actor.id, events);
+  enforceCountess(s, target.id, events);
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +428,9 @@ function finishTurn(s: GameState, events: Event[]): void {
   const drawn = s.deck.shift()!;
   next.hand.push(drawn);
   events.push({ type: 'cardDrawn', playerId: nextId, card: drawn });
+  // Drawing the King/Prince while holding the Countess forces her discard
+  // immediately (rules spec §4.7).
+  enforceCountess(s, nextId, events);
 }
 
 /**
@@ -384,6 +551,7 @@ function startRound(s: GameState, events: Event[], rng: () => number): void {
   const drawn = s.deck.shift()!;
   first.hand.push(drawn);
   events.push({ type: 'turnStarted', playerId: firstId }, { type: 'cardDrawn', playerId: firstId, card: drawn });
+  enforceCountess(s, firstId, events);
 }
 
 // ---------------------------------------------------------------------------
@@ -392,6 +560,51 @@ function startRound(s: GameState, events: Event[], rng: () => number): void {
 
 function findPlayer(s: GameState, id: string): PlayerState | undefined {
   return s.players.find((p) => p.id === id);
+}
+
+/** A player is out: their hand is revealed face-up and added to the discards. */
+function eliminate(s: GameState, playerId: string, reason: EliminationReason, events: Event[]): void {
+  const p = findPlayer(s, playerId)!;
+  p.out = true;
+  const revealed = p.hand;
+  p.hand = [];
+  p.discardPile.push(...revealed);
+  for (const card of revealed) {
+    events.push({ type: 'handRevealed', playerId, card });
+  }
+  events.push({ type: 'playerEliminated', playerId, reason });
+}
+
+/**
+ * Draw from the top of the deck; on an empty deck the single face-down card
+ * removed at setup (ruling 4 — the face-up 2-player removals are never drawn).
+ */
+function drawCard(s: GameState): Card | null {
+  const fromDeck = s.deck.shift();
+  if (fromDeck) return fromDeck;
+  if (s.burned !== null) {
+    const burned = s.burned;
+    s.burned = null; // the removed card is now in someone's hand
+    return burned;
+  }
+  return null;
+}
+
+function holdsCountessWithRoyal(p: PlayerState): boolean {
+  return p.hand.some((c) => c.rank === COUNTESS) && p.hand.some((c) => ROYAL_RANKS.has(c.rank));
+}
+
+/**
+ * The Countess constraint is mandatory and immediate: while holding her with
+ * the King or Prince you must discard her (no effect) — rules spec §4.7.
+ */
+function enforceCountess(s: GameState, playerId: string, events: Event[]): void {
+  const p = findPlayer(s, playerId);
+  if (!p || !holdsCountessWithRoyal(p)) return;
+  const index = p.hand.findIndex((c) => c.rank === COUNTESS);
+  const [countess] = p.hand.splice(index, 1);
+  p.discardPile.push(countess!);
+  events.push({ type: 'cardDiscarded', playerId, card: countess!, reason: 'countess' });
 }
 
 function nextInRound(s: GameState, fromId: string): string {

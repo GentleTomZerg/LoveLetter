@@ -37,7 +37,8 @@ export interface PlayerState {
   discardPile: Card[];
   /** Eliminated from the current round. */
   out: boolean;
-  /** Handmaid immunity (blocks being chosen) — unused until ticket 03. */
+  /** Handmaid immunity — blocks being chosen by others' cards until the
+   *  start of your next turn (rules spec §4.4). */
   protected: boolean;
   /** Tokens of affection — round wins; first to the target wins the match. */
   tokens: number;
@@ -45,17 +46,30 @@ export interface PlayerState {
 
 /**
  * The follow-up the engine needs before a turn is over (two-phase effects).
- * Ticket 02 implements only the Guard: choose a target player + a named card.
- * Priest/Baron/Prince/King choices arrive in ticket 03.
+ * The four target-only cards (Priest/Baron/Prince/King) and the Guard's
+ * target-plus-card-name guess. Targets are pre-computed as the legal player
+ * ids; the chooser may only pick from them.
  */
 export type PendingChoice =
-  | { kind: 'guard'; playerId: string; targets: string[]; namedOptions: Rank[] };
+  | { kind: 'guard'; playerId: string; targets: string[]; namedOptions: Rank[] }
+  | { kind: 'priest'; playerId: string; targets: string[] }
+  | { kind: 'baron'; playerId: string; targets: string[] }
+  | { kind: 'prince'; playerId: string; targets: string[] }
+  | { kind: 'king'; playerId: string; targets: string[] };
 
-/** Payload of a resolved Guard choice: a target player and a named card rank. */
-export interface GuardChoice {
-  targetPlayerId: string;
-  namedRank: Rank;
-}
+/** The five cards that ask for a target via `pendingChoice`. */
+export type TargetKind = 'guard' | 'priest' | 'baron' | 'prince' | 'king';
+
+/**
+ * A resolved choice, discriminated by the pending choice it answers. The
+ * Guard adds the named card; the other four just pick a target.
+ */
+export type Choice =
+  | { kind: 'guard'; targetPlayerId: string; namedRank: Rank }
+  | { kind: 'priest'; targetPlayerId: string }
+  | { kind: 'baron'; targetPlayerId: string }
+  | { kind: 'prince'; targetPlayerId: string }
+  | { kind: 'king'; targetPlayerId: string };
 
 /** The full, server-authoritative engine state. */
 export interface GameState {
@@ -95,7 +109,7 @@ export type Intent =
   | { type: 'createRoom'; roomCode: string; capacity: 2 | 3 | 4; playerId: string; playerName: string; tokenTarget?: number }
   | { type: 'joinRoom'; playerId: string; playerName: string }
   | { type: 'playCard'; playerId: string; which: 0 | 1 }
-  | { type: 'choice'; playerId: string; choice: GuardChoice }
+  | { type: 'choice'; playerId: string; choice: Choice }
   | { type: 'nextRound'; playerId: string }
   | { type: 'rematch'; playerId: string };
 
@@ -106,7 +120,12 @@ export type Intent =
  * Two events carry a private payload: `cardDealt` and `cardDrawn` reach every
  * socket so the table state stays consistent, but the card itself is sent only
  * to the named player — other recipients receive `card: null`. The
- * authoritative room log always keeps the full event.
+ * authoritative room log always keeps the full event. `handPeeked` (Priest)
+ * follows the same pattern: the peek is public, the card seen is not.
+ *
+ * `cardDiscarded` covers forced, effect-less discards (the Prince's target
+ * discards their hand; the Countess's mandatory discard) — the card is face
+ * up, so it is public.
  */
 export type Event =
   | { type: 'roomCreated'; roomCode: string; capacity: number }
@@ -119,11 +138,14 @@ export type Event =
   | { type: 'cardPlayed'; playerId: string; which: 0 | 1; card: Card }
   | { type: 'cardFizzled'; playerId: string; card: Card }
   | { type: 'choiceRequired'; playerId: string; pendingChoice: PendingChoice }
-  | { type: 'choiceMade'; playerId: string; choice: GuardChoice }
+  | { type: 'choiceMade'; playerId: string; choice: Choice }
+  | { type: 'handTraded'; playerId: string; card: Card | null } // card visible only to the named player
+  | { type: 'handPeeked'; playerId: string; targetPlayerId: string; card: Card | null } // card visible only to the Priest's chooser
+  | { type: 'cardDiscarded'; playerId: string; card: Card; reason: 'prince' | 'countess' }
   | { type: 'handRevealed'; playerId: string; card: Card }
-  | { type: 'playerEliminated'; playerId: string; reason: 'guard' }
+  | { type: 'playerEliminated'; playerId: string; reason: 'guard' | 'baron' | 'princess' }
   | { type: 'roundEnded'; winnerIds: string[]; reason: 'last-standing' | 'highest-hand' }
   | { type: 'matchEnded'; winnerId: string };
 
-/** Why a player left the round (extended by more cards in ticket 03). */
-export type EliminationReason = 'guard';
+/** Why a player left the round (each card adds its own reason). */
+export type EliminationReason = 'guard' | 'baron' | 'princess';

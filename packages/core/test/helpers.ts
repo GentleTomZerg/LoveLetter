@@ -4,7 +4,7 @@
  */
 
 import { CARD_INFO, defaultTokenTarget } from '../src/index.js';
-import type { Card, Event, GameState, PlayerState, Rank } from '../src/index.js';
+import type { Card, Choice, Event, GameState, PlayerState, Rank } from '../src/index.js';
 
 /** mulberry32 — tiny, deterministic, good enough for shuffling. */
 export function seededRng(seed: number): () => number {
@@ -69,6 +69,11 @@ export function makeLobby(capacity: 2 | 3 | 4, playerIds: string[]): GameState {
     roundWinnerIds: [],
     matchWinnerId: null,
   };
+}
+
+/** A Guard's choice payload — the only kind that names a card. */
+export function guardChoice(targetPlayerId: string, namedRank: Rank): Choice {
+  return { kind: 'guard', targetPlayerId, namedRank };
 }
 
 /** Collect the events of a given type, narrowed to that event's shape. */
