@@ -1,19 +1,16 @@
 /**
- * @love-letter/server — entry point (placeholder for ticket 01).
+ * @love-letter/server — entry point.
  *
- * A minimal Node http server that boots and listens. Ticket 02 adds the WS
- * upgrade + static client serving; ticket 05 adds rooms, reconnect, chat.
+ * Boots the http + ws server. In dev the client runs on Vite (port 5173) and
+ * proxies /ws here; in a single-process deploy this server also serves the
+ * built client from packages/client/dist.
  */
 
-import { createServer } from 'node:http';
+import { resolve } from 'node:path';
+import { createApp } from './app.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
+const STATIC_ROOT = process.env.STATIC_ROOT ?? resolve(import.meta.dirname, '../../client/dist');
 
-const server = createServer((_req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Love Letter server is running\n');
-});
-
-server.listen(PORT, () => {
-  console.log(`Love Letter server listening on http://localhost:${PORT}`);
-});
+const app = await createApp({ port: PORT, staticRoot: STATIC_ROOT });
+console.log(`Love Letter server listening on http://localhost:${app.port} (ws at /ws)`);
