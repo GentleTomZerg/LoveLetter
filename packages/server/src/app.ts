@@ -214,10 +214,10 @@ function toIntent(packet: ClientPacket, playerId: string): Intent | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Send every event to every socket in the room. The draw/deal events are
- * public (the deck shrinks, a hand is dealt) but their card payload is private:
- * non-owners receive `card: null`, so the authoritative log keeps the secret
- * while every client tracks the same public table state.
+ * Send every event to every socket in the room. The draw/deal/peek events are
+ * public (the deck shrinks, a hand is dealt, a Priest looks) but their card
+ * payload is private: non-owners receive `card: null`, so the authoritative
+ * log keeps the secret while every client tracks the same public table state.
  */
 function broadcast(room: Room, events: Event[], opts: { except?: string } = {}): void {
   for (const event of events) {
@@ -225,7 +225,11 @@ function broadcast(room: Room, events: Event[], opts: { except?: string } = {}):
       if (id === opts.except) continue;
       if (ws.readyState !== WebSocket.OPEN) continue;
       let payload: Event = event;
-      if ((event.type === 'cardDealt' || event.type === 'cardDrawn') && event.playerId !== id) {
+      if (
+        (event.type === 'cardDealt' || event.type === 'cardDrawn'
+          || event.type === 'handPeeked' || event.type === 'handTraded')
+        && event.playerId !== id
+      ) {
         payload = { ...event, card: null };
       }
       sendJson(ws, { type: 'event', event: payload });

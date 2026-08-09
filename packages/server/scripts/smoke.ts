@@ -1,8 +1,8 @@
 /**
  * End-to-end smoke test: two real WebSocket clients play a full 2-player match
- * (Guard-only, through the real server + engine) to the 7-token target, then
- * rematch, then hit the error paths. Each client folds the event stream with
- * the same reducer the browser uses, so this exercises the whole vertical
+ * with every card, through the real server + engine, to the 7-token target,
+ * then rematch, then hit the error paths. Each client folds the event stream
+ * with the same reducer the browser uses, so this exercises the whole vertical
  * spine programmatically — the automated twin of the two-tab hand check.
  *
  * Run: npm run smoke --workspace @love-letter/server
@@ -97,6 +97,24 @@ function assertNoErrors(...clients: TestClient[]): void {
   }
 }
 
+/** Private card payloads (draw/deal/peek/trade) must never reach a non-owner. */
+function assertPrivacy(...clients: TestClient[]): void {
+  for (const c of clients) {
+    for (const p of c.packets) {
+      if (p.type !== 'event') continue;
+      const e = p.event;
+      if (
+        (e.type === 'cardDealt' || e.type === 'cardDrawn'
+          || e.type === 'handPeeked' || e.type === 'handTraded')
+        && e.playerId !== c.selfId
+        && e.card !== null
+      ) {
+        throw new Error(`private card leaked to a non-owner: ${e.type} for ${e.playerId} seen by ${c.selfId}`);
+      }
+    }
+  }
+}
+
 async function run(port: number): Promise<void> {
   // --- pre-flight error paths ---------------------------------------------
   {
@@ -146,9 +164,13 @@ async function run(port: number): Promise<void> {
       }
       if (v.phase === 'round' && v.pendingChoice !== null && v.pendingChoice.playerId === c.selfId) {
         const pc = v.pendingChoice;
-        const namedRank = pc.namedOptions[guessIndex % pc.namedOptions.length]!;
-        guessIndex += 1;
-        c.send({ type: 'choice', choice: { targetPlayerId: pc.targets[0]!, namedRank } });
+        if (pc.kind === 'guard') {
+          const namedRank = pc.namedOptions[guessIndex % pc.namedOptions.length]!;
+          guessIndex += 1;
+          c.send({ type: 'choice', choice: { kind: 'guard', targetPlayerId: pc.targets[0]!, namedRank } });
+        } else {
+          c.send({ type: 'choice', choice: { kind: pc.kind, targetPlayerId: pc.targets[0]! } });
+        }
         await c.waitForNew(before);
         acted = true;
         break;
@@ -162,6 +184,7 @@ async function run(port: number): Promise<void> {
     }
     if (!acted) await new Promise((r) => setTimeout(r, 10));
     assertNoErrors(alice, bob);
+    assertPrivacy(alice, bob);
   }
 
   assert.equal(alice.view!.phase, 'matchEnded', 'match did not end');
