@@ -24,7 +24,7 @@ export function Home({ game }: { game: Game }) {
 
   return (
     <div className="screen home">
-      <h1>Love Letter</h1>
+      <img src="/cards/logo.png" alt="Love Letter" className="logo" />
       <p className="tagline">A game of risk, deduction, and luck for 2–4 players.</p>
 
       <div className="panel">

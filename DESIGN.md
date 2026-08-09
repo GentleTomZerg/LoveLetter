@@ -35,7 +35,7 @@ Primary design record. Source: grilling session (stateless `/grilling` primitive
 | Q18 | Lobby | Creator picks capacity (2–4), **auto-start when full** | Rooms always support 2 |
 | Q19 | MVP scope | **As proposed** | Lobby → full match → chat → event log → functional UI → engine tests |
 | Q20 | Deploy target | **Local now, revisit later** | Fly.io not a guaranteed free tier → deferred |
-| Q21 | Card art | **game-icons.net icons (CC BY 3.0)** | Own SVG card frames; one-line attribution screen |
+| Q21 | Card art | **User-provided PNGs** (rank-keyed in `client/public/cards`) | Replaces the game-icons plan; source/license TBD |
 
 ## Stack
 
@@ -93,10 +93,9 @@ love-letter/
 
 ## Art (Q21)
 
-- **game-icons.net** icons (CC BY 3.0 — attribution required, exact format: *"Icons made by {author}; Available on https://game-icons.net"*, per-icon author listed on each icon page). Board & Card tag: https://game-icons.net/tags/board.html.
-- Our own SVG card frame/back (no license needed — we design it).
-- One-line attribution/credits screen in the client.
-- **No proprietary art.** Research verified no complete open-licensed Love Letter set exists; game-icons was the confirmed best route.
+- **Card art: user-provided PNGs** in `packages/client/public/cards/` — one 903×1296 full-card image per rank (`1.png`–`8.png`), two card backs, and a logo. Files are rank-keyed so the image filenames never leak display names. (Source/license of the PNGs: TBD — confirm with the author before any public release; see the original game-icons plan below.)
+- Original plan (superseded): game-icons.net icons (CC BY 3.0) on our own card frames, with the required one-line attribution screen. Research verified no complete open-licensed Love Letter set exists.
+- **No proprietary art** and trademark-safe role titles only (no character names) still apply. Note: the provided rank-2 artwork is captioned "Spy" in its filename (the 2019 Z-Man name); the game displays the original 2012 name "Priest" regardless — regenerate that one if the art itself reads as a Spy.
 
 ## Rules core facts
 

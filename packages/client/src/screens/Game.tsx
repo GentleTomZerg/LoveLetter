@@ -51,6 +51,13 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
           </p>
         )}
 
+        {view.burnedCount > 0 && view.phase === 'round' && (
+          <div className="burned">
+            <img src="/cards/back-light.png" alt="" className="card-back" />
+            <span className="muted">face-down removed card — unknown to all</span>
+          </div>
+        )}
+
         {view.phase === 'roundEnded' && (
           <div className="panel round-over">
             <p>
@@ -84,14 +91,14 @@ function CardView({ card, playable, onClick }: { card: Card; playable: boolean; 
   const info = CARD_INFO[card.rank];
   return (
     <button
-      className={`card ${playable ? 'playable' : ''}`}
+      className={`card art ${playable ? 'playable' : ''}`}
       onClick={onClick}
       disabled={!playable}
       title={info.effect}
     >
-      <span className="rank">{card.rank}</span>
-      <span className="name">{card.name}</span>
-      <span className="effect">{info.effect}</span>
+      <img src={`/cards/${card.rank}.png`} alt={`${card.name} (${card.rank})`} draggable={false} />
+      <span className="rank-badge">{card.rank}</span>
+      <span className="name-caption">{card.name}</span>
     </button>
   );
 }
@@ -183,6 +190,7 @@ function ChoicePanel({
               key={rank}
               onClick={() => onChoice({ kind: 'guard', targetPlayerId: targetId, namedRank: rank })}
             >
+              <img src={`/cards/${rank}.png`} alt="" className="choice-thumb" />
               {CARD_INFO[rank].name}
             </button>
           ))}
