@@ -1,0 +1,45 @@
+/**
+ * The 16-card deck and card metadata (rules spec §1).
+ *
+ * Deck composition is data, not hard-coded per card, so an extended deck is a
+ * config change (DESIGN Q2).
+ */
+
+import type { Card, CardName, Rank } from './types.js';
+
+/** Display + rules text per rank. Effect text mirrors the official rulebook. */
+export const CARD_INFO: Record<Rank, { name: CardName; effect: string }> = {
+  1: { name: 'Guard', effect: 'Choose a player and name a card (other than Guard). If that player has that card, they are out of the round.' },
+  2: { name: 'Priest', effect: 'Look at one other player\'s hand — you alone.' },
+  3: { name: 'Baron', effect: 'Secretly compare hands with another player. Lower rank is out; a tie changes nothing.' },
+  4: { name: 'Handmaid', effect: 'You are immune to other players\' cards until the start of your next turn.' },
+  5: { name: 'Prince', effect: 'Choose a player (including yourself). They discard their hand and draw a new card.' },
+  6: { name: 'King', effect: 'Trade hands with another player. A trade is not a discard.' },
+  7: { name: 'Countess', effect: 'No effect when discarded. If you hold her with the King or Prince, you must discard her.' },
+  8: { name: 'Princess', effect: 'If you discard the Princess for any reason, you are out of the round.' },
+};
+
+const DECK_COMPOSITION: ReadonlyArray<{ rank: Rank; count: number }> = [
+  { rank: 1, count: 5 }, // Guard ×5
+  { rank: 2, count: 2 }, // Priest ×2
+  { rank: 3, count: 2 }, // Baron ×2
+  { rank: 4, count: 2 }, // Handmaid ×2
+  { rank: 5, count: 2 }, // Prince ×2
+  { rank: 6, count: 1 }, // King ×1
+  { rank: 7, count: 1 }, // Countess ×1
+  { rank: 8, count: 1 }, // Princess ×1
+];
+
+/** The full 16-card deck, in composition order (caller shuffles). */
+export function buildDeck(): Card[] {
+  const deck: Card[] = [];
+  for (const { rank, count } of DECK_COMPOSITION) {
+    for (let i = 0; i < count; i++) deck.push(cardOf(rank));
+  }
+  return deck;
+}
+
+/** A single card of the given rank. */
+export function cardOf(rank: Rank): Card {
+  return { rank, name: CARD_INFO[rank].name };
+}

@@ -5,7 +5,16 @@
  * can be unit-tested exhaustively without a server or browser.
  */
 
-/** Placeholder export proving the package wires up. Replaced by the engine in ticket 02. */
-export function greeting(): string {
-  return 'Love Letter core engine';
-}
+export * from './types.js';
+export * from './cards.js';
+export { shuffle } from './random.js';
+export { apply, defaultTokenTarget, type ApplyResult } from './engine.js';
+export {
+  buildView,
+  reduceView,
+  type ViewState,
+  type PlayerView,
+  type LogEntry,
+  type LogKind,
+} from './view.js';
+export type { ClientPacket, ServerPacket } from './protocol.js';
