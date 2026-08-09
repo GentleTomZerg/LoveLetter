@@ -13,7 +13,7 @@
  * keep their previous reference untouched.
  */
 
-import { buildDeck } from './cards.js';
+import { buildDeck, forcedDiscard } from './cards.js';
 import { shuffle } from './random.js';
 import type {
   Card,
@@ -47,7 +47,6 @@ const ROOM_CODE_PATTERN = /^[A-Z0-9]{4}$/;
 /** A Guard may name any card except the Guard itself (rules spec §4.1). */
 const GUARD_NAMED_OPTIONS: Rank[] = [2, 3, 4, 5, 6, 7, 8];
 /** Ranks whose combination with the Countess forces her discard (§4.7). */
-const ROYAL_RANKS: ReadonlySet<Rank> = new Set([5, 6]);
 const COUNTESS: Rank = 7;
 const PRINCESS: Rank = 8;
 
@@ -156,7 +155,7 @@ function playCard(s: GameState, intent: Extract<Intent, { type: 'playCard' }>): 
   if (!card) return err('no card at that hand index');
   // The engine forces the Countess discard at every hand change, so this state
   // should never occur — but never play through an illegal hand (rules §4.7).
-  if (holdsCountessWithRoyal(actor)) return err('the Countess must be discarded when you hold the King or Prince');
+  if (forcedDiscard(actor.hand) !== null) return err('the Countess must be discarded when you hold the King or Prince');
 
   actor.hand.splice(intent.which, 1);
   actor.discardPile.push(card);
@@ -622,17 +621,9 @@ function drawCard(s: GameState): Card | null {
   return null;
 }
 
-function holdsCountessWithRoyal(p: PlayerState): boolean {
-  return p.hand.some((c) => c.rank === COUNTESS) && p.hand.some((c) => ROYAL_RANKS.has(c.rank));
-}
-
-/**
- * The Countess constraint is mandatory and immediate: while holding her with
- * the King or Prince you must discard her (no effect) — rules spec §4.7.
- */
 function enforceCountess(s: GameState, playerId: string, events: Event[]): void {
   const p = findPlayer(s, playerId);
-  if (!p || !holdsCountessWithRoyal(p)) return;
+  if (!p || forcedDiscard(p.hand) === null) return;
   const index = p.hand.findIndex((c) => c.rank === COUNTESS);
   const [countess] = p.hand.splice(index, 1);
   p.discardPile.push(countess!);

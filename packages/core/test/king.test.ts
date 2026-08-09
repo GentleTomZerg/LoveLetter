@@ -36,6 +36,25 @@ describe('King (6)', () => {
     ]);
   });
 
+  it('forces the Countess discard when a King trade hands her the Prince (ruling 2)', () => {
+    // Defensive: in standard play the King's target always holds one card, so
+    // a trade can never create the pair — but if a state ever reached it, the
+    // discard must fire at the trade, not the next decision (ADR-0001).
+    const s = makeGame(
+      [p('A', { hand: [card(6), card(1)] }), p('B', { hand: [card(7), card(5)] })],
+      { deck: deckOf(2, 8) },
+    );
+    const result = playKingTrading(s, 'B');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(eventsOf(result.events, 'cardDiscarded')).toEqual([
+      { type: 'cardDiscarded', playerId: 'A', card: card(7), reason: 'countess' },
+    ]);
+    expect(result.state.players[0]!.hand).toEqual([card(5)]);
+    expect(result.state.players[0]!.discardPile).toEqual([card(6), card(7)]); // played King, then the forced Countess
+    expect(result.state.players[1]!.hand).toEqual([card(1), card(2)]); // Guard received, then the draw
+  });
+
   it('trading the Princess is legal — a trade is not a discard', () => {
     const s = makeGame(
       [p('A', { hand: [card(6), card(8)] }), p('B', { hand: [card(2)] })],

@@ -43,3 +43,20 @@ export function buildDeck(): Card[] {
 export function cardOf(rank: Rank): Card {
   return { rank, name: CARD_INFO[rank].name };
 }
+
+/** Ranks involved in the Countess rule (§4.7): she must go when a royal joins her. */
+const COUNTESS_RANK: Rank = 7;
+const KING_RANK: Rank = 6;
+const PRINCE_RANK: Rank = 5;
+
+/**
+ * The card that must be discarded immediately when the hand pairs the Countess
+ * with the King or Prince (rules spec §4.7). The engine enforces the discard
+ * at every hand change (draws, the King trade, the Prince's target), so a
+ * consistent view never holds the pair — the check is a defensive guard that
+ * rejects an illegal hand before any card resolves.
+ */
+export function forcedDiscard(hand: readonly Card[]): Rank | null {
+  const has = (rank: Rank) => hand.some((c) => c.rank === rank);
+  return has(COUNTESS_RANK) && (has(KING_RANK) || has(PRINCE_RANK)) ? COUNTESS_RANK : null;
+}

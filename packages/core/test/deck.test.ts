@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apply, buildDeck, cardOf } from '../src/index.js';
+import { apply, buildDeck, cardOf, forcedDiscard } from '../src/index.js';
 import type { Event, GameState, Intent } from '../src/index.js';
 import { eventsOf, seededRng } from './helpers.js';
 
@@ -45,6 +45,46 @@ describe('deck composition', () => {
   it('names cards correctly', () => {
     expect(cardOf(1).name).toBe('Guard');
     expect(cardOf(8).name).toBe('Princess');
+  });
+});
+
+describe('forced discard (Countess, rules spec §4.7)', () => {
+  it('forces the Countess while the hand also holds the King', () => {
+    expect(forcedDiscard([cardOf(7), cardOf(6)])).toBe(7);
+  });
+
+  it('forces the Countess while the hand also holds the Prince', () => {
+    expect(forcedDiscard([cardOf(5), cardOf(7)])).toBe(7);
+  });
+
+  it('does not force anything without the Countess', () => {
+    expect(forcedDiscard([cardOf(5), cardOf(6)])).toBeNull();
+    expect(forcedDiscard([cardOf(7), cardOf(8)])).toBeNull(); // Princess does not trigger her
+  });
+
+  it('does not force anything with a lone Countess or an empty hand', () => {
+    expect(forcedDiscard([cardOf(7)])).toBeNull();
+    expect(forcedDiscard([])).toBeNull();
+  });
+
+  it('agrees with the engine: a play is rejected while a forced discard is due', () => {
+    const rng = seededRng(3);
+    let result = apply(null, { type: 'createRoom', roomCode: 'TEST', capacity: 2, playerId: 'A', playerName: 'Alice' }, rng);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    let state = result.state;
+    result = apply(state, { type: 'joinRoom', playerId: 'B', playerName: 'Bob' }, rng);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    state = result.state;
+
+    // Hand-built: Alice holds the Countess + Prince, so the Prince play must fail.
+    const alice = state.players[0]!;
+    alice.hand = [cardOf(7), cardOf(5)];
+    expect(forcedDiscard(alice.hand)).toBe(7);
+    result = apply(state, { type: 'playCard', playerId: 'A', which: 1 }, rng);
+    if (result.ok) throw new Error('expected the Prince play to be rejected');
+    expect(result.error).toMatch(/countess/i);
   });
 });
 
