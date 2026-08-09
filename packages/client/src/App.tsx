@@ -1,16 +1,48 @@
 /**
- * @love-letter/client — App root (placeholder for ticket 01).
- * Home → Lobby → Game arrives in tickets 02 and 06.
+ * @love-letter/client — App root: wires the connection hook to the three
+ * screens (Home → Lobby → Game), with a dismissible error banner.
  */
 
-import { greeting } from '@love-letter/core';
+import { useGame } from './useGame';
+import { Home } from './screens/Home';
+import { Lobby } from './screens/Lobby';
+import { Game } from './screens/Game';
 
 export function App() {
+  const game = useGame();
+
+  if (game.status === 'connecting') {
+    return (
+      <div className="screen">
+        <p className="muted">Connecting…</p>
+      </div>
+    );
+  }
+
+  if (game.status === 'closed') {
+    return (
+      <div className="screen">
+        <p className="muted">Connection lost — refresh to return to the start screen. (Reconnect is on the roadmap.)</p>
+      </div>
+    );
+  }
+
+  if (game.view === null) {
+    return <Home game={game} />;
+  }
+
   return (
-    <main>
-      <h1>Love Letter Online</h1>
-      <p>Scaffold placeholder — the game is coming.</p>
-      <p>{greeting()}</p>
-    </main>
+    <>
+      {game.error !== null && (
+        <div className="error-banner" onClick={game.clearError}>
+          {game.error}
+        </div>
+      )}
+      {game.view.phase === 'lobby' ? (
+        <Lobby view={game.view} selfId={game.selfId!} />
+      ) : (
+        <Game view={game.view} selfId={game.selfId!} game={game} />
+      )}
+    </>
   );
 }

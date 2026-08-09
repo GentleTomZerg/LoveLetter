@@ -1,16 +1,366 @@
+/* Love Letter Online — functional-clean styling. No animations, just readable. */
+
 :root {
-  color-scheme: light dark;
-  font-family: system-ui, sans-serif;
-  line-height: 1.5;
+  --ink: #2b2b33;
+  --muted: #8a8a94;
+  --line: #e2e2e8;
+  --panel: #ffffff;
+  --accent: #b3402e;
+  --accent-soft: #f6e3df;
+  --ok: #2e7d32;
+  --ok-soft: #e4f2e5;
+  --warn: #b3402e;
+  --warn-soft: #fbe9e7;
+  --bg: #f6f4f0;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.screen {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 h1 {
-  margin: 0 0 0.5rem;
+  margin: 0;
+  font-size: 2rem;
+}
+
+h2 {
+  margin: 0;
+}
+
+.tagline {
+  color: var(--muted);
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+input,
+select {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.divider {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.25rem 0;
+}
+
+.code-input {
+  flex: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+}
+
+.error-banner {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--warn-soft);
+  color: var(--warn);
+  border-bottom: 1px solid #eec3bd;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* --- Lobby --- */
+
+.seats {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.seats .seat {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.seats .seat.empty {
+  background: transparent;
+  border-style: dashed;
+}
+
+.status {
+  font-weight: 600;
+}
+
+/* --- Game --- */
+
+.game-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.scoreboard {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.scoreboard .seat {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+  background: var(--panel);
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.scoreboard .seat.me {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.scoreboard .seat.out {
+  opacity: 0.55;
+}
+
+.scoreboard .tokens {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-badge {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badge {
+  background: var(--line);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.out-badge {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.protected-badge {
+  background: #e3ecf8;
+  color: #2b5bb3;
+}
+
+.turn-banner {
+  font-weight: 700;
+  margin: 0.25rem 0 0;
+}
+
+.table {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hand {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  min-height: 8rem;
+}
+
+.card {
+  width: 8.5rem;
+  min-height: 11rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-start;
+  text-align: left;
+  cursor: default;
+}
+
+.card .rank {
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.card .name {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.card .effect {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  font-weight: 400;
+}
+
+.card.playable {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 2px var(--ok-soft);
+  cursor: pointer;
+}
+
+.card.playable:hover {
+  transform: translateY(-2px);
+  border-color: var(--ok);
+}
+
+.choice-prompt {
+  font-weight: 600;
+  margin: 0;
+}
+
+.choice-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.choice-row button.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.choice-row.cards button {
+  min-width: 5.5rem;
+}
+
+.round-over p,
+.match-over p {
+  margin: 0;
+}
+
+.face-up {
+  font-size: 0.8rem;
+}
+
+/* --- Log --- */
+
+.log {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  max-height: 16rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+.log li {
+  padding: 0.4rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.log li:last-child {
+  border-bottom: none;
+}
+
+.log-round {
+  font-weight: 700;
+}
+
+.log-match {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.log-eliminate {
+  color: var(--warn);
+}
+
+.log-reveal {
+  color: var(--muted);
 }

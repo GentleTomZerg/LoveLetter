@@ -5,5 +5,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    // In dev the client talks same-origin; /ws is forwarded to the Node server.
+    proxy: {
+      '/ws': { target: 'ws://localhost:3001', ws: true },
+    },
   },
 });
