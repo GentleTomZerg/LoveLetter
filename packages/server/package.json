@@ -8,6 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "ui-smoke": "tsx scripts/ui-smoke.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CARD_INFO } from '@love-letter/core';
-import type { Card, Choice, LogEntry, PendingChoice, PlayerView, ViewState } from '@love-letter/core';
+import type { Card, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Rank, ViewState } from '@love-letter/core';
 import type { Game } from '../useGame';
 
 export function Game({ view, selfId, game }: { view: ViewState; selfId: string; game: Game }) {
@@ -17,66 +17,75 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
         <span>Deck: {view.deckCount}</span>
       </header>
 
-      <Scoreboard view={view} selfId={selfId} />
+      <div className="game-layout">
+        <main className="game-main">
+          <Scoreboard view={view} selfId={selfId} />
 
-      <div className="table">
-        {myTurn && view.phase === 'round' && !myChoice && (
-          <p className="turn-banner">It's your turn — play a card.</p>
-        )}
+          <Discards players={view.players} />
 
-        <div className="hand">
-          {view.hand.length === 0 && <p className="muted">Your hand is empty.</p>}
-          {view.hand.map((card, i) => (
-            <CardView
-              key={i}
-              card={card}
-              playable={canPlay}
-              onClick={() => game.sendPlayCard(i as 0 | 1)}
-            />
-          ))}
-        </div>
+          <div className="table">
+            {myTurn && view.phase === 'round' && !myChoice && (
+              <p className="turn-banner">It's your turn — play a card.</p>
+            )}
 
-        {view.pendingChoice && (
-          <ChoicePanel
-            pendingChoice={view.pendingChoice}
-            selfId={selfId}
-            players={view.players}
-            onChoice={game.sendChoice}
-          />
-        )}
+            <div className="hand">
+              {view.hand.length === 0 && <p className="muted">Your hand is empty.</p>}
+              {view.hand.map((card, i) => (
+                <CardView
+                  key={i}
+                  card={card}
+                  playable={canPlay}
+                  onClick={() => game.sendPlayCard(i as 0 | 1)}
+                />
+              ))}
+            </div>
 
-        {view.faceUpRemoved.length > 0 && (
-          <p className="muted face-up">
-            Removed face-up: {view.faceUpRemoved.map((c) => c.name).join(', ')}
-          </p>
-        )}
+            {view.pendingChoice && (
+              <ChoicePanel
+                pendingChoice={view.pendingChoice}
+                selfId={selfId}
+                players={view.players}
+                onChoice={game.sendChoice}
+              />
+            )}
 
-        {view.burnedCount > 0 && view.phase === 'round' && (
-          <div className="burned">
-            <img src="/cards/back-light.png" alt="" className="card-back" />
-            <span className="muted">face-down removed card — unknown to all</span>
+            {view.faceUpRemoved.length > 0 && (
+              <p className="muted face-up">
+                Removed face-up: {view.faceUpRemoved.map((c) => c.name).join(', ')}
+              </p>
+            )}
+
+            {view.burnedCount > 0 && view.phase === 'round' && (
+              <div className="burned">
+                <img src="/cards/back-light.png" alt="" className="card-back" />
+                <span className="muted">face-down removed card — unknown to all</span>
+              </div>
+            )}
+
+            {view.phase === 'roundEnded' && (
+              <div className="panel round-over">
+                <p>
+                  <strong>{view.roundWinnerIds.map((id) => playerName(view, id, selfId)).join(' and ')}</strong> won the round.
+                </p>
+                <button onClick={game.sendNextRound}>Start next round</button>
+              </div>
+            )}
+
+            {view.phase === 'matchEnded' && view.matchWinnerId && (
+              <div className="panel match-over">
+                <h2>{playerName(view, view.matchWinnerId, selfId)} won the match!</h2>
+                <p>First to {view.tokenTarget} tokens — rematch with the same seats?</p>
+                <button onClick={game.sendRematch}>Rematch</button>
+              </div>
+            )}
           </div>
-        )}
 
-        {view.phase === 'roundEnded' && (
-          <div className="panel round-over">
-            <p>
-              <strong>{view.roundWinnerIds.map((id) => playerName(view, id, selfId)).join(' and ')}</strong> won the round.
-            </p>
-            <button onClick={game.sendNextRound}>Start next round</button>
-          </div>
-        )}
+          <Log log={view.log} />
+        </main>
 
-        {view.phase === 'matchEnded' && view.matchWinnerId && (
-          <div className="panel match-over">
-            <h2>{playerName(view, view.matchWinnerId, selfId)} won the match!</h2>
-            <p>First to {view.tokenTarget} tokens — rematch with the same seats?</p>
-            <button onClick={game.sendRematch}>Rematch</button>
-          </div>
-        )}
+        <ChatPanel chat={game.chat} selfId={selfId} onSend={game.sendChat} />
       </div>
 
-      <Log log={view.log} />
       {me && me.protected && <p className="badge protected-badge">You are protected by the Handmaid</p>}
     </div>
   );
@@ -87,16 +96,31 @@ function playerName(view: ViewState, id: string, selfId: string): string {
   return view.players.find((p) => p.id === id)?.name ?? id;
 }
 
+/**
+ * A rank-keyed card image. Art files are rank-keyed (`1.png`–`8.png`) so the
+ * filenames never leak a card name; the tooltip carries the rules text.
+ */
+function CardThumb({ rank, className }: { rank: Rank; className?: string }) {
+  const info = CARD_INFO[rank];
+  return (
+    <img
+      src={`/cards/${rank}.png`}
+      alt={`${info.name} (${rank})`}
+      title={`${info.name} — ${info.effect}`}
+      className={className}
+      draggable={false}
+    />
+  );
+}
+
 function CardView({ card, playable, onClick }: { card: Card; playable: boolean; onClick: () => void }) {
-  const info = CARD_INFO[card.rank];
   return (
     <button
       className={`card art ${playable ? 'playable' : ''}`}
       onClick={onClick}
       disabled={!playable}
-      title={info.effect}
     >
-      <img src={`/cards/${card.rank}.png`} alt={`${card.name} (${card.rank})`} draggable={false} />
+      <CardThumb rank={card.rank} />
       <span className="rank-badge">{card.rank}</span>
       <span className="name-caption">{card.name}</span>
     </button>
@@ -118,6 +142,85 @@ function Scoreboard({ view, selfId }: { view: ViewState; selfId: string }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * Each player's face-up discards in play order — public table state, the raw
+ * material of deduction. The panel always renders so the layout is stable; a
+ * seat with nothing discarded yet shows a dash.
+ */
+function Discards({ players }: { players: PlayerView[] }) {
+  return (
+    <div className="panel discards">
+      <p className="panel-title">Discards</p>
+      {players.map((p) => (
+        <div key={p.id} className={`discard-row ${p.out ? 'out' : ''}`}>
+          <span className="name" title={p.name}>{p.name}</span>
+          {p.discardPile.length === 0 ? (
+            <span className="muted pile-empty">—</span>
+          ) : (
+            <span className="pile">
+              {p.discardPile.map((c, i) => (
+                <CardThumb key={i} rank={c.rank} />
+              ))}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Room chat: a scrollable message list fed by `game.chat` (live relay + the
+ * `chatLog` replay on resume) and a free-text input that sends through the
+ * server relay. Enter submits; the send button stays disabled while empty.
+ */
+function ChatPanel({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: string; onSend: (text: string) => void }) {
+  const [draft, setDraft] = useState('');
+  const listRef = useRef<HTMLUListElement | null>(null);
+
+  // Keep the newest message in view as the list grows.
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chat]);
+
+  const send = () => {
+    const text = draft.trim();
+    if (text.length === 0) return;
+    onSend(text);
+    setDraft('');
+  };
+
+  return (
+    <aside className="panel chat">
+      <p className="panel-title">Chat</p>
+      <ul className="chat-log" ref={listRef}>
+        {chat.map((m, i) => (
+          <li key={i} className={m.from === selfId ? 'mine' : ''}>
+            <span className="chat-name">{m.from === selfId ? 'You' : m.name}</span>
+            <span className="chat-text">{m.text}</span>
+          </li>
+        ))}
+        {chat.length === 0 && <li className="muted chat-empty">No messages yet.</li>}
+      </ul>
+      <div className="chat-input">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') send();
+          }}
+          placeholder="Say something…"
+          maxLength={200}
+        />
+        <button onClick={send} disabled={draft.trim().length === 0}>
+          Send
+        </button>
+      </div>
+    </aside>
   );
 }
 
@@ -190,7 +293,7 @@ function ChoicePanel({
               key={rank}
               onClick={() => onChoice({ kind: 'guard', targetPlayerId: targetId, namedRank: rank })}
             >
-              <img src={`/cards/${rank}.png`} alt="" className="choice-thumb" />
+              <CardThumb rank={rank} className="choice-thumb" />
               {CARD_INFO[rank].name}
             </button>
           ))}
