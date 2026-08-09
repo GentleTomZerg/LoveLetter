@@ -27,6 +27,10 @@ export function Home({ game }: { game: Game }) {
       <img src="/cards/logo.png" alt="Love Letter" className="logo" />
       <p className="tagline">A game of risk, deduction, and luck for 2–4 players.</p>
 
+      {game.error !== null && (
+        <p className="error-banner" onClick={game.clearError}>{game.error}</p>
+      )}
+
       <div className="panel">
         <label>
           Your name

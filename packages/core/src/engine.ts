@@ -71,6 +71,7 @@ export function apply(
     case 'choice': return makeChoice(s, intent);
     case 'nextRound': return nextRound(s, intent, rng);
     case 'rematch': return rematch(s, intent, rng);
+    case 'fold': return foldPlayer(s, intent);
   }
 }
 
@@ -504,6 +505,35 @@ function rematch(s: GameState, _intent: Extract<Intent, { type: 'rematch' }>, rn
 }
 
 /**
+ * Auto-fold a dropped player (DESIGN Q12, ticket 05): the server issues this
+ * on their behalf when their turn comes and their grace window has expired.
+ * The folded player is out of the round — their hand is revealed like any
+ * other elimination — and their seat stays for the next round. An open
+ * pending choice (their turn's card effect) is abandoned.
+ *
+ * Refused only when they are the last player in the round: folding them would
+ * leave nobody to end the round. The server reacts by scheduling the room's
+ * expiry (one more grace window to return, then the room is reclaimed).
+ */
+function foldPlayer(s: GameState, intent: Extract<Intent, { type: 'fold' }>): ApplyResult {
+  if (s.phase !== 'round') return err('no round in progress');
+  if (s.currentTurn !== intent.playerId) return err('only the turn owner may be folded');
+  const player = findPlayer(s, intent.playerId);
+  if (!player || player.out) return err('player is not in the round');
+  const others = s.players.filter((p) => !p.out && p.id !== intent.playerId);
+  if (others.length === 0) return err('the last player in the round cannot fold');
+
+  const events: Event[] = [];
+  if (s.pendingChoice !== null) {
+    s.pendingChoice = null;
+    events.push({ type: 'choiceAbandoned', playerId: intent.playerId });
+  }
+  eliminate(s, intent.playerId, 'fold', events);
+  finishTurn(s, events);
+  return ok(s, events);
+}
+
+/**
  * Set up and deal a new round (rules spec §2): shuffle, burn one face-down,
  * remove three face-up in 2-player games, deal one card to each seat, and give
  * the first turn to the previous round's winner (first seat in round 1). The
@@ -527,23 +557,25 @@ function startRound(s: GameState, events: Event[], rng: () => number): void {
     ? [s.deck.shift()!, s.deck.shift()!, s.deck.shift()!]
     : [];
 
+  s.phase = 'round';
+  s.pendingChoice = null;
+  s.roundWinnerIds = [];
+  s.currentTurn = firstId;
+  // Announce the round before dealing: clients reset their tables on
+  // `roundStarted`, then the deals arrive on top of the clean state.
+  events.push({
+    type: 'roundStarted',
+    roundNumber: s.roundNumber,
+    firstPlayerId: firstId,
+    deckCount: s.deck.length - s.players.length, // what remains once every seat is dealt
+    faceUpRemoved: s.faceUpRemoved,
+  });
+
   for (const p of s.players) {
     const card = s.deck.shift()!;
     p.hand.push(card);
     events.push({ type: 'cardDealt', playerId: p.id, card });
   }
-
-  s.phase = 'round';
-  s.pendingChoice = null;
-  s.roundWinnerIds = [];
-  s.currentTurn = firstId;
-  events.push({
-    type: 'roundStarted',
-    roundNumber: s.roundNumber,
-    firstPlayerId: firstId,
-    deckCount: s.deck.length,
-    faceUpRemoved: s.faceUpRemoved,
-  });
 
   // The first turn starts with its draw.
   const first = findPlayer(s, firstId)!;

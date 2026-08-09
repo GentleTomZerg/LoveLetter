@@ -103,7 +103,9 @@ export interface GameState {
  *
  * createRoom/joinRoom are connection-level intents the server forwards from
  * the create/join packets; the server stamps playerId from the socket — the
- * client is never trusted to name itself.
+ * client is never trusted to name itself. `fold` is a system-level intent the
+ * server issues on behalf of a dropped socket whose grace window expired
+ * (ticket 05) — same validation, different sender.
  */
 export type Intent =
   | { type: 'createRoom'; roomCode: string; capacity: 2 | 3 | 4; playerId: string; playerName: string; tokenTarget?: number }
@@ -111,7 +113,8 @@ export type Intent =
   | { type: 'playCard'; playerId: string; which: 0 | 1 }
   | { type: 'choice'; playerId: string; choice: Choice }
   | { type: 'nextRound'; playerId: string }
-  | { type: 'rematch'; playerId: string };
+  | { type: 'rematch'; playerId: string }
+  | { type: 'fold'; playerId: string };
 
 /**
  * An immutable, ordered record of a state transition, appended to the event
@@ -139,13 +142,14 @@ export type Event =
   | { type: 'cardFizzled'; playerId: string; card: Card }
   | { type: 'choiceRequired'; playerId: string; pendingChoice: PendingChoice }
   | { type: 'choiceMade'; playerId: string; choice: Choice }
+  | { type: 'choiceAbandoned'; playerId: string } // a dropped player's open choice is void (fold)
   | { type: 'handTraded'; playerId: string; card: Card | null } // card visible only to the named player
   | { type: 'handPeeked'; playerId: string; targetPlayerId: string; card: Card | null } // card visible only to the Priest's chooser
   | { type: 'cardDiscarded'; playerId: string; card: Card; reason: 'prince' | 'countess' }
   | { type: 'handRevealed'; playerId: string; card: Card }
-  | { type: 'playerEliminated'; playerId: string; reason: 'guard' | 'baron' | 'princess' }
+  | { type: 'playerEliminated'; playerId: string; reason: EliminationReason }
   | { type: 'roundEnded'; winnerIds: string[]; reason: 'last-standing' | 'highest-hand' }
   | { type: 'matchEnded'; winnerId: string };
 
 /** Why a player left the round (each card adds its own reason). */
-export type EliminationReason = 'guard' | 'baron' | 'princess';
+export type EliminationReason = 'guard' | 'baron' | 'princess' | 'fold';

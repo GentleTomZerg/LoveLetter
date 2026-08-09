@@ -140,6 +140,7 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       v.roundNumber = event.roundNumber;
       v.deckCount = event.deckCount;
       v.faceUpRemoved = event.faceUpRemoved;
+      v.burnedCount = 1; // every round removes one card face-down at setup
       v.currentTurn = event.firstPlayerId;
       v.pendingChoice = null;
       v.roundWinnerIds = [];
@@ -158,18 +159,26 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
 
     case 'turnStarted':
       v.currentTurn = event.playerId;
+      // Handmaid immunity ends at the start of your next turn (§8.3).
+      v.players.find((p) => p.id === event.playerId)!.protected = false;
       break;
 
     case 'cardDrawn':
       // Every draw is public table state (the deck shrinks); the card itself
-      // only arrives on the drawing player's own stream.
+      // only arrives on the drawing player's own stream. A draw when the deck
+      // is already empty is the face-down burned card leaving the burn pile
+      // (ruling 4 — the face-up 2-player removals are never drawn).
+      if (v.deckCount === 0) v.burnedCount = 0;
       v.deckCount = Math.max(0, v.deckCount - 1);
       if (event.playerId === selfId && event.card) v.hand = [...v.hand, event.card];
       break;
 
     case 'cardPlayed': {
       const player = v.players.find((p) => p.id === event.playerId);
-      if (player) player.discardPile = [...player.discardPile, event.card];
+      if (player) {
+        player.discardPile = [...player.discardPile, event.card];
+        if (event.card.rank === 4) player.protected = true; // Handmaid (§4.4)
+      }
       if (event.playerId === selfId) {
         v.hand = v.hand.filter((_, i) => i !== event.which);
       }
@@ -210,6 +219,11 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       break;
     }
 
+    case 'choiceAbandoned':
+      v.pendingChoice = null;
+      log('info', `${name(event.playerId)} left — their choice was abandoned`);
+      break;
+
     case 'handTraded':
       // A trade replaces your whole hand; others only learn it happened.
       if (event.playerId === selfId && event.card) v.hand = [event.card];
@@ -244,7 +258,9 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
 
     case 'playerEliminated':
       v.players.find((p) => p.id === event.playerId)!.out = true;
-      log('eliminate', `${name(event.playerId)} is out`);
+      log('eliminate', event.reason === 'fold'
+        ? `${name(event.playerId)} folded (disconnected)`
+        : `${name(event.playerId)} is out`);
       break;
 
     case 'roundEnded':

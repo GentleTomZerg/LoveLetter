@@ -162,3 +162,57 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
     expect(reduceView(null, { type: 'turnStarted', playerId: 'A' }, SELF)).toBeNull();
   });
 });
+
+describe('reduceView: public table state from events (replay fidelity)', () => {
+  it('a round always starts with one face-down burned card', () => {
+    let view: ViewState | null = buildView(makeGame([p('A'), p('B')], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+    expect(view!.burnedCount).toBe(1);
+  });
+
+  it('the burned card leaves the burn pile only on an empty-deck draw (ruling 4)', () => {
+    let view: ViewState | null = buildView(makeGame([p('A'), p('B')], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+
+    // The deck empties through ordinary draws; the burn pile is untouched.
+    for (let i = 0; i < 10; i++) {
+      view = reduceView(view, { type: 'cardDrawn', playerId: 'A', card: null }, SELF);
+    }
+    expect(view!.deckCount).toBe(0);
+    expect(view!.burnedCount).toBe(1); // taking the last deck card is not a burn draw
+
+    // A further draw with the deck empty is the face-down burned card.
+    view = reduceView(view, { type: 'cardDrawn', playerId: 'B', card: null }, SELF);
+    expect(view!.burnedCount).toBe(0);
+  });
+
+  it('the Handmaid protects the player until their next turn starts', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), OTHER);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, OTHER);
+    expect(view!.players[0]!.protected).toBe(false);
+
+    view = reduceView(view, { type: 'cardPlayed', playerId: 'A', which: 0, card: card(4) }, OTHER);
+    expect(view!.players[0]!.protected).toBe(true); // Handmaid immunity is public
+
+    view = reduceView(view, { type: 'turnStarted', playerId: 'A' }, OTHER);
+    expect(view!.players[0]!.protected).toBe(false); // expires at the start of your turn
+  });
+
+  it('folds the choiceAbandoned event by clearing the pending choice', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), OTHER);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, OTHER);
+    const pending: PendingChoice = { kind: 'guard', playerId: 'A', targets: ['B'], namedOptions: [2, 3, 4, 5, 6, 7, 8] };
+    view = reduceView(view, { type: 'choiceRequired', playerId: 'A', pendingChoice: pending }, OTHER);
+    expect(view!.pendingChoice).toEqual(pending);
+    view = reduceView(view, { type: 'choiceAbandoned', playerId: 'A' }, OTHER);
+    expect(view!.pendingChoice).toBeNull();
+    expect(view!.log.at(-1)!.text).toBe('Alice left — their choice was abandoned');
+  });
+
+  it('labels a fold elimination in the log', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), OTHER);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, OTHER);
+    view = reduceView(view, { type: 'playerEliminated', playerId: 'A', reason: 'fold' }, OTHER);
+    expect(view!.log.at(-1)!.text).toBe('Alice folded (disconnected)');
+  });
+});

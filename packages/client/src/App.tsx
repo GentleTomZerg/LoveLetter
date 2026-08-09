@@ -22,7 +22,7 @@ export function App() {
   if (game.status === 'closed') {
     return (
       <div className="screen">
-        <p className="muted">Connection lost — refresh to return to the start screen. (Reconnect is on the roadmap.)</p>
+        <p className="muted">Connection lost — refresh to resume your seat. Your room is held for a minute after the drop.</p>
       </div>
     );
   }

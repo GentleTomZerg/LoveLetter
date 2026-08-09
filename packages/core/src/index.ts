@@ -17,4 +17,4 @@ export {
   type LogEntry,
   type LogKind,
 } from './view.js';
-export type { ClientPacket, ServerPacket } from './protocol.js';
+export type { ClientPacket, ServerPacket, ChatMessage } from './protocol.js';
