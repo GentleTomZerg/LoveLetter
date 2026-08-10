@@ -17,6 +17,8 @@ export interface PlayerView {
   protected: boolean;
   /** Discarded cards, face-up in play order — public. */
   discardPile: Card[];
+  /** Cards currently held — the count is public (hand size is open table state in Love Letter); the cards themselves stay private. */
+  handCount: number;
 }
 
 export type LogKind = 'play' | 'fizzle' | 'choice' | 'peek' | 'discard' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'info';
@@ -63,6 +65,7 @@ export function buildView(state: GameState, selfId: string): ViewState {
       out: p.out,
       protected: p.protected,
       discardPile: [...p.discardPile],
+      handCount: p.hand.length,
     })),
     currentTurn: state.currentTurn,
     pendingChoice: state.pendingChoice ? { ...state.pendingChoice } : null,
@@ -117,6 +120,7 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
         out: false,
         protected: false,
         discardPile: [],
+        handCount: 0,
       });
       log('join', `${event.player.name} joined`);
       break;
@@ -132,6 +136,7 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       v.matchWinnerId = null;
       v.roundWinnerIds = [];
       v.hand = [];
+      for (const p of v.players) p.handCount = 0;
       log('info', 'Rematch — a new match begins');
       break;
 
@@ -148,12 +153,15 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
         p.out = false;
         p.protected = false;
         p.discardPile = [];
+        p.handCount = 0;
       }
       v.hand = [];
       log('info', `Round ${event.roundNumber} begins`);
       break;
 
     case 'cardDealt':
+      // Each player is dealt exactly one card at round start.
+      v.players.find((p) => p.id === event.playerId)!.handCount = 1;
       if (event.playerId === selfId && event.card) v.hand = [event.card];
       break;
 
@@ -170,6 +178,8 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       // (ruling 4 — the face-up 2-player removals are never drawn).
       if (v.deckCount === 0) v.burnedCount = 0;
       v.deckCount = Math.max(0, v.deckCount - 1);
+      // A draw always puts one more card in that player's hand.
+      v.players.find((p) => p.id === event.playerId)!.handCount += 1;
       if (event.playerId === selfId && event.card) v.hand = [...v.hand, event.card];
       break;
 
@@ -177,6 +187,7 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       const player = v.players.find((p) => p.id === event.playerId);
       if (player) {
         player.discardPile = [...player.discardPile, event.card];
+        player.handCount -= 1; // the played card left their hand
         if (event.card.rank === 4) player.protected = true; // Handmaid (§4.4)
       }
       if (event.playerId === selfId) {
@@ -226,6 +237,9 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
 
     case 'handTraded':
       // A trade replaces your whole hand; others only learn it happened.
+      // Hand size is public, so the event carries the received hand's count
+      // (King can swap unequal hands — e.g. after a forced Countess discard).
+      v.players.find((p) => p.id === event.playerId)!.handCount = event.count;
       if (event.playerId === selfId && event.card) v.hand = [event.card];
       break;
 
@@ -240,7 +254,10 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
 
     case 'cardDiscarded': {
       const player = v.players.find((p) => p.id === event.playerId);
-      if (player) player.discardPile = [...player.discardPile, event.card];
+      if (player) {
+        player.discardPile = [...player.discardPile, event.card];
+        player.handCount -= 1; // Prince target or forced Countess — one card left the hand
+      }
       if (event.playerId === selfId) v.hand = removeCard(v.hand, event.card);
       log('discard', event.reason === 'countess'
         ? `${name(event.playerId)} discarded the Countess (forced)`
@@ -250,7 +267,10 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
 
     case 'handRevealed': {
       const player = v.players.find((p) => p.id === event.playerId);
-      if (player) player.discardPile = [...player.discardPile, event.card];
+      if (player) {
+        player.discardPile = [...player.discardPile, event.card];
+        player.handCount -= 1; // elimination / deck-empty reveal — the card left their hand
+      }
       if (event.playerId === selfId) v.hand = removeCard(v.hand, event.card);
       log('reveal', `${name(event.playerId)} revealed ${event.card.name}`);
       break;

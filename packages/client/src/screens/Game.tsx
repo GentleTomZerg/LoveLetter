@@ -19,9 +19,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
 
       <div className="game-layout">
         <main className="game-main">
-          <Scoreboard view={view} selfId={selfId} />
-
-          <Discards players={view.players} />
+          <TablePanel view={view} selfId={selfId} />
 
           <div className="table">
             {myTurn && view.phase === 'round' && !myChoice && (
@@ -129,47 +127,51 @@ function CardView({ card, playable, onClick }: { card: Card; playable: boolean; 
   );
 }
 
-function Scoreboard({ view, selfId }: { view: ViewState; selfId: string }) {
-  return (
-    <div className="scoreboard">
-      {view.players.map((p) => (
-        <div key={p.id} className={`seat ${p.id === selfId ? 'me' : ''} ${p.out ? 'out' : ''}`}>
-          <span className="name">{p.name}{p.id === selfId ? ' (you)' : ''}</span>
-          <span className="tokens">
-            {p.tokens} / {view.tokenTarget}
-          </span>
-          {view.currentTurn === p.id && view.phase === 'round' && <span className="turn-badge">turn</span>}
-          {p.protected && <span className="badge">protected</span>}
-          {p.out && <span className="badge out-badge">out</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /**
- * Each player's face-up discards in play order — public table state, the raw
- * material of deduction. The panel always renders so the layout is stable; a
- * seat with nothing discarded yet shows a dash.
+ * One unified panel for all public table state (issue 14): each player's row
+ * shows their name, hearts (tokens) won, whose turn it is, protected/out
+ * state, their face-up discards (an overlapping, shadowed pile — the raw
+ * material of deduction) and how many cards they still hold (face-down backs
+ * plus an explicit count). The panel always renders so the layout is stable.
  */
-function Discards({ players }: { players: PlayerView[] }) {
+function TablePanel({ view, selfId }: { view: ViewState; selfId: string }) {
   return (
-    <div className="panel discards">
-      <p className="panel-title">Discards</p>
-      {players.map((p) => (
-        <div key={p.id} className={`discard-row ${p.out ? 'out' : ''}`}>
-          <span className="name" title={p.name}>{p.name}</span>
-          {p.discardPile.length === 0 ? (
-            <span className="muted pile-empty">—</span>
-          ) : (
-            <span className="pile">
-              {p.discardPile.map((c, i) => (
-                <CardThumb key={i} rank={c.rank} />
-              ))}
+    <div className="panel scoreboard">
+      <p className="panel-title">Table</p>
+      {view.players.map((p) => {
+        const isMe = p.id === selfId;
+        const isTurn = view.currentTurn === p.id && view.phase === 'round';
+        return (
+          <div
+            key={p.id}
+            className={`seat ${isMe ? 'me' : ''} ${p.out ? 'out' : ''} ${isTurn ? 'turn' : ''}`}
+          >
+            <span className="name" title={p.name}>{p.name}{isMe ? ' (you)' : ''}</span>
+            <span className="tokens" title="hearts (tokens) won">♥ {p.tokens} / {view.tokenTarget}</span>
+            {isTurn && <span className="turn-badge">turn</span>}
+            {p.protected && <span className="badge">protected</span>}
+            {p.out && <span className="badge out-badge">out</span>}
+            {p.discardPile.length === 0 ? (
+              <span className="muted pile-empty">—</span>
+            ) : (
+              <span className="pile" title={`${p.discardPile.length} card${p.discardPile.length === 1 ? '' : 's'} discarded`}>
+                {p.discardPile.map((c, i) => (
+                  <CardThumb key={i} rank={c.rank} />
+                ))}
+              </span>
+            )}
+            <span className="hand-info" title={`${p.handCount} card${p.handCount === 1 ? '' : 's'} in hand`}>
+              <span className="muted hand-label">hand</span>
+              <span className="hand-backs">
+                {Array.from({ length: p.handCount }).map((_, i) => (
+                  <img key={i} src="/cards/back-light.png" alt="" className="hand-back" draggable={false} />
+                ))}
+              </span>
+              <span className={`hand-count ${p.handCount === 0 ? 'zero' : ''}`}>{p.handCount}</span>
             </span>
-          )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }

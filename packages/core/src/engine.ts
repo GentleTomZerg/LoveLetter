@@ -382,7 +382,7 @@ function resolveKingChoice(
   // Each trader learns the card they received; others only see that a trade
   // happened (the card payload is private, like deals and draws).
   for (const [id, hand] of [[actor.id, actor.hand], [target.id, target.hand]] as const) {
-    events.push({ type: 'handTraded', playerId: id, card: hand[0] ?? null });
+    events.push({ type: 'handTraded', playerId: id, card: hand[0] ?? null, count: hand.length });
   }
   enforceCountess(s, actor.id, events);
   enforceCountess(s, target.id, events);

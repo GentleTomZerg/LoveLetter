@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildView, reduceView } from '../src/index.js';
-import type { PendingChoice, ViewState } from '../src/index.js';
+import type { Event as GameEvent, PendingChoice, ViewState } from '../src/index.js';
 import { card, makeGame, p } from './helpers.js';
 
 const SELF = 'A';
@@ -14,8 +14,8 @@ describe('buildView', () => {
     ]);
     const view = buildView(state, SELF);
     expect(view.hand).toEqual([card(1)]);
-    expect(view.players[0]).toMatchObject({ id: 'A', name: 'Alice', tokens: 2, out: false });
-    expect(view.players[1]).toMatchObject({ id: 'B', name: 'Bob', tokens: 0, out: true });
+    expect(view.players[0]).toMatchObject({ id: 'A', name: 'Alice', tokens: 2, out: false, handCount: 1 });
+    expect(view.players[1]).toMatchObject({ id: 'B', name: 'Bob', tokens: 0, out: true, handCount: 1 });
     // the other player's hand is never part of my view
     expect(Object.keys(view.players[1]!)).not.toContain('hand');
     expect(view.players[1]!.discardPile).toEqual([card(2)]);
@@ -145,10 +145,10 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
     expect(view!.hand).toEqual([]);
 
     // a King trade replaces the whole hand with the received card
-    view = reduceView(view, { type: 'handTraded', playerId: SELF, card: card(3) }, SELF);
+    view = reduceView(view, { type: 'handTraded', playerId: SELF, card: card(3), count: 1 }, SELF);
     expect(view!.hand).toEqual([card(3)]);
     // …but a trade by someone else never touches my hand
-    view = reduceView(view, { type: 'handTraded', playerId: OTHER, card: null }, SELF);
+    view = reduceView(view, { type: 'handTraded', playerId: OTHER, card: null, count: 2 }, SELF);
     expect(view!.hand).toEqual([card(3)]);
 
     // elimination reveals drop the revealed card from my hand
@@ -160,6 +160,61 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
 
   it('returns null when there is no view yet (events before snapshot)', () => {
     expect(reduceView(null, { type: 'turnStarted', playerId: 'A' }, SELF)).toBeNull();
+  });
+
+  it('tracks every player’s public hand count through a full round (issue 13)', () => {
+    let view: ViewState | null = buildView(makeGame([p('A'), p('B')], { deck: [] }), SELF);
+    const round: GameEvent = { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 8, faceUpRemoved: [] };
+
+    // Round start: nobody holds cards until the deals arrive.
+    view = reduceView(view, round, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([0, 0]);
+
+    // Each player is dealt exactly one card.
+    view = reduceView(view, { type: 'cardDealt', playerId: 'A', card: card(1) }, SELF);
+    view = reduceView(view, { type: 'cardDealt', playerId: 'B', card: card(2) }, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([1, 1]);
+
+    // A's turn: plays one, then draws one back.
+    view = reduceView(view, { type: 'cardDrawn', playerId: 'A', card: card(1) }, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([2, 1]);
+    view = reduceView(view, { type: 'cardPlayed', playerId: 'A', which: 0, card: card(1) }, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([1, 1]);
+
+    // Prince'd discard drops B to zero.
+    view = reduceView(view, { type: 'cardDiscarded', playerId: 'B', card: card(2), reason: 'prince' }, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([1, 0]);
+
+    // A King trade swaps unequal hands: A (1) ↔ B (0). The count travels
+    // with the received hand, so B's trade event carries the new size.
+    view = reduceView(view, { type: 'handTraded', playerId: 'A', card: null, count: 0 }, SELF);
+    view = reduceView(view, { type: 'handTraded', playerId: 'B', card: card(1), count: 1 }, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([0, 1]);
+
+    // B draws back to two, then is eliminated: the reveal drops them to zero.
+    view = reduceView(view, { type: 'cardDrawn', playerId: 'B', card: card(1) }, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([0, 2]);
+    view = reduceView(view, { type: 'handRevealed', playerId: 'B', card: card(1) }, SELF);
+    view = reduceView(view, { type: 'handRevealed', playerId: 'B', card: card(2) }, SELF);
+    view = reduceView(view, { type: 'playerEliminated', playerId: 'B', reason: 'guard' }, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([0, 0]);
+    expect(view!.players[1]!.discardPile).toHaveLength(3); // played + Prince'd + both revealed
+
+    // Rematch resets the counts.
+    view = reduceView(view, { type: 'rematchStarted' }, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([0, 0]);
+  });
+
+  it('the empty-deck burn draw still lands in the drawing player’s hand', () => {
+    let view: ViewState | null = buildView(makeGame([p('A'), p('B')], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 0, faceUpRemoved: [] }, SELF);
+    view = reduceView(view, { type: 'cardDealt', playerId: 'A', card: card(1) }, SELF);
+    view = reduceView(view, { type: 'cardDealt', playerId: 'B', card: card(2) }, SELF);
+    expect(view!.players.map((p) => p.handCount)).toEqual([1, 1]);
+    // Deck empty: A's next draw is the face-down burned card (ruling 4).
+    view = reduceView(view, { type: 'cardDrawn', playerId: 'A', card: null }, SELF);
+    expect(view!.burnedCount).toBe(0);
+    expect(view!.players.map((p) => p.handCount)).toEqual([2, 1]);
   });
 });
 

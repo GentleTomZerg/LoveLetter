@@ -143,7 +143,7 @@ export type Event =
   | { type: 'choiceRequired'; playerId: string; pendingChoice: PendingChoice }
   | { type: 'choiceMade'; playerId: string; choice: Choice }
   | { type: 'choiceAbandoned'; playerId: string } // a dropped player's open choice is void (fold)
-  | { type: 'handTraded'; playerId: string; card: Card | null } // card visible only to the named player
+  | { type: 'handTraded'; playerId: string; card: Card | null; count: number } // card visible only to the named player; count (received hand size) is public
   | { type: 'handPeeked'; playerId: string; targetPlayerId: string; card: Card | null } // card visible only to the Priest's chooser
   | { type: 'cardDiscarded'; playerId: string; card: Card; reason: 'prince' | 'countess' }
   | { type: 'handRevealed'; playerId: string; card: Card }

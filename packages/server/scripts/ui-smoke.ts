@@ -143,7 +143,7 @@ async function openRoom(base: string, tabs: CdpSession[], capacity: number, name
 
 const nonEmptyPiles = (tab: CdpSession) =>
   tab.eval(
-    `[...document.querySelectorAll('.discard-row .pile')].filter((p) => p.querySelectorAll('img').length > 0).length`,
+    `[...document.querySelectorAll('.scoreboard .seat .pile')].filter((p) => p.querySelectorAll('img').length > 0).length`,
   );
 
 const logText = (tab: CdpSession) =>
@@ -152,7 +152,8 @@ const logText = (tab: CdpSession) =>
 /** The public table state a resumed tab must reproduce exactly. */
 const publicSnapshot = (tab: CdpSession) =>
   tab.eval(`({
-    discards: [...document.querySelectorAll('.discard-row .pile img')].map((i) => i.getAttribute('src')),
+    discards: [...document.querySelectorAll('.scoreboard .seat .pile img')].map((i) => i.getAttribute('src')),
+    hands: [...document.querySelectorAll('.scoreboard .seat .hand-count')].map((t) => t.textContent),
     tokens: [...document.querySelectorAll('.scoreboard .tokens')].map((t) => t.textContent),
     header: [...document.querySelectorAll('.game-header span')].map((s) => s.textContent),
   })`);
@@ -200,6 +201,20 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
     'turn badge on the first seat',
   );
 
+  // Issue 14: the active player's row is highlighted with a pill — exactly
+  // one seat is marked at round start — and the row internals never reuse
+  // the bare `.hand` class (it would inherit the table-hand min-height).
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.scoreboard .seat.turn').length`),
+    1,
+    'exactly one seat is the current turn',
+  );
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.scoreboard .seat .hand').length`),
+    0,
+    'no bare .hand class inside seats',
+  );
+
   // The abilities reference (issue 12) lists all eight cards once opened.
   assert.equal(await tabA.eval(`document.querySelector('.abilities') !== null`), true, 'abilities panel present');
   assert.equal(await tabA.eval(`document.querySelector('.abilities').open`), false, 'abilities panel collapsed');
@@ -213,10 +228,27 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
 
   await playUntil([tabA, tabB], async () => (await nonEmptyPiles(tabA)) >= 2, 600);
   const pileImgs = (await tabA.eval(
-    `[...document.querySelectorAll('.discard-row .pile img')].map((i) => i.getAttribute('src'))`,
+    `[...document.querySelectorAll('.scoreboard .seat .pile img')].map((i) => i.getAttribute('src'))`,
   )) as string[];
   assert.ok(pileImgs.length >= 2, 'discard piles show card images');
   assert.ok(pileImgs.every((src) => /^\/cards\/[1-8]\.png$/.test(src)), `discard images are rank-keyed: ${pileImgs}`);
+
+  // Issue 13: every seat shows a public hand count; once anyone has played,
+  // at least one seat holds cards represented by face-down backs.
+  const handCounts = (await tabA.eval(
+    `[...document.querySelectorAll('.scoreboard .seat .hand-count')].map((t) => t.textContent)`,
+  )) as string[];
+  assert.equal(handCounts.length, 2, 'both seats show a hand count');
+  assert.ok(
+    handCounts.every((c) => /^[0-2]$/.test(c ?? '')),
+    `hand counts are numbers 0-2: ${handCounts}`,
+  );
+  const totalHeld = handCounts.reduce((sum, c) => sum + Number(c), 0);
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.scoreboard .seat .hand-back').length`),
+    totalHeld,
+    'face-down backs equal the total cards held',
+  );
 
   await setInput(tabA, '.chat-input input', 'hello from Alice');
   await click(tabA, '.chat-input button');

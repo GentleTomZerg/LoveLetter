@@ -23,7 +23,7 @@ describe('King (6)', () => {
     expect(eventsOf(result.events, 'playerEliminated')).toHaveLength(0);
   });
 
-  it('emits a private trade event per player with the card each received', () => {
+  it('emits a private trade event per player with the card each received and the public hand size', () => {
     const s = makeGame(
       [p('A', { hand: [card(6), card(1)] }), p('B', { hand: [card(2)] })],
       { deck: deckOf(5, 7, 8) },
@@ -31,8 +31,8 @@ describe('King (6)', () => {
     const result = playKingTrading(s, 'B');
     if (!result.ok) throw new Error(result.error);
     expect(eventsOf(result.events, 'handTraded')).toEqual([
-      { type: 'handTraded', playerId: 'A', card: card(2) },
-      { type: 'handTraded', playerId: 'B', card: card(1) },
+      { type: 'handTraded', playerId: 'A', card: card(2), count: 1 }, // A played the King, so both hands are one card
+      { type: 'handTraded', playerId: 'B', card: card(1), count: 1 },
     ]);
   });
 
