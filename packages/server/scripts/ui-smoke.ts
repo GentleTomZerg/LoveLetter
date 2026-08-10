@@ -189,6 +189,35 @@ async function runNarrowViewport(base: string, debugPort: number): Promise<void>
 // ---------------------------------------------------------------------------
 // Scenario 1 — ticket 06 render claims
 // ---------------------------------------------------------------------------
+/**
+ * Locale toggle (ticket 17): with the browser forced to en-US (cdp.ts), a
+ * fresh visitor sees English; clicking 中文 switches every screen string to
+ * Simplified Chinese, and clicking EN switches back. The automated slice of
+ * the ticket's "a Chinese speaker reads every screen" pass — rendering and
+ * completeness are covered here; naturalness still needs human eyes.
+ */
+async function runLocaleCheck(base: string, debugPort: number): Promise<void> {
+  const [tab] = await openTabs(debugPort, 1);
+  await tab.navigate(base);
+  await waitFor(tab, `document.querySelector('.screen.home') !== null`, 10000, 'Home (en)');
+  assert.equal(
+    await tab.eval(`document.querySelector('.home .panel button').textContent.trim()`),
+    'Create room',
+    'fresh visitor defaults to English',
+  );
+
+  await clickButton(tab, '.locale-toggle', '中文');
+  await waitFor(tab, `document.querySelector('.home .panel button').textContent.trim() === '创建房间'`, 5000, 'Home (zh)');
+  assert.equal(
+    await tab.eval(`document.querySelector('.home .panel button').textContent.trim()`),
+    '创建房间',
+    '中文 toggle renders Simplified Chinese',
+  );
+
+  await clickButton(tab, '.locale-toggle', 'EN');
+  await waitFor(tab, `document.querySelector('.home .panel button').textContent.trim() === 'Create room'`, 5000, 'Home (en again)');
+  console.log('  locale toggle: en → 中文 → EN round-trips');
+}
 
 async function runRenderChecks(base: string, debugPort: number): Promise<void> {
   const [tabA, tabB] = await openTabs(debugPort, 2);
@@ -414,6 +443,8 @@ async function main(): Promise<void> {
 
     console.log('[ui-smoke] narrow-phone layout (issue 10)…');
     await runNarrowViewport(base, debugPort);
+    console.log('[ui-smoke] locale toggle (ticket 17)…');
+    await runLocaleCheck(base, debugPort);
     console.log('[ui-smoke] render checks (Home → Lobby → Game, discards, chat)…');
     await runRenderChecks(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');

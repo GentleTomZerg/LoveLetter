@@ -9,7 +9,7 @@
 
 import type { LogEntry, Rank } from '@love-letter/core';
 import type { MessageKey } from './messages';
-import type { TParams } from './index';
+import { joinLocalizedList, type TParams } from './index';
 
 export interface LogContext {
   selfId: string;
@@ -88,7 +88,7 @@ export function formatLogEntry(entry: LogEntry, ctx: LogContext): string {
         ? ctx.t('log.eliminate.fold', { name: name(params.playerId as string) })
         : ctx.t('log.eliminate.out', { name: name(params.playerId as string) });
     case 'round': {
-      const winners = (params.winners as string[]).map(name).join(ctx.t('common.listAnd'));
+      const winners = joinLocalizedList((params.winners as string[]).map(name), ctx.t);
       return params.reason === 'last-standing'
         ? ctx.t('log.round.last', { names: winners })
         : ctx.t('log.round.hand', { names: winners });

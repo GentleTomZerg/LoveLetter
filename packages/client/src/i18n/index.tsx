@@ -58,6 +58,17 @@ export interface LocaleApi {
   cardEffect: (rank: Rank) => string;
 }
 
+/**
+ * Join already-resolved display names per locale convention: "A and B",
+ * "A, B and C" in English; "A 和 B", "A、B 和 C" in Chinese.
+ */
+export function joinLocalizedList(items: readonly string[], t: LocaleApi['t']): string {
+  if (items.length <= 1) return items[0] ?? '';
+  const last = items[items.length - 1]!;
+  const rest = items.slice(0, -1).join(t('common.listComma'));
+  return `${rest}${t('common.listAnd')}${last}`;
+}
+
 const LocaleContext = createContext<LocaleApi | null>(null);
 
 export function LocaleProvider({ children }: { children: ReactNode }) {

@@ -61,6 +61,7 @@ export async function launchChrome(debugPort: number, profile: string): Promise<
 export async function openTabs(debugPort: number, count: number): Promise<CdpSession[]> {
   const version = (await (await fetch(`http://127.0.0.1:${debugPort}/json/version`)).json()) as {
     webSocketDebuggerUrl: string;
+    'User-Agent': string;
   };
 
   const ws = new WebSocket(version.webSocketDebuggerUrl);
@@ -124,6 +125,15 @@ export async function openTabs(debugPort: number, count: number): Promise<CdpSes
     const session = makeSession(sessionId);
     await send('Page.enable', {}, sessionId);
     await send('Runtime.enable', {}, sessionId);
+    // Deterministic UI language: the smoke asserts English UI text, but the
+    // app auto-detects the browser locale (ADR-0004) and headless Chrome
+    // inherits the host OS's — override it before the page ever navigates.
+    // (`--lang` is ignored by this Chrome; the CDP override is the lever.)
+    await send(
+      'Emulation.setUserAgentOverride',
+      { userAgent: version['User-Agent'], acceptLanguage: 'en-US,en;q=0.9' },
+      sessionId,
+    );
     sessions.push(session);
   }
   return sessions;

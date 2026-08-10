@@ -162,9 +162,158 @@ export const en = {
 
 export type MessageKey = keyof typeof en;
 
+/**
+ * Simplified Chinese (zh-Hans), one `zh` key (ADR-0004, ticket 17).
+ * Card names follow the official Chinese edition: 守卫/祭司/男爵/侍女/
+ * 王子/国王/伯爵夫人/公主.
+ */
 export const zh: Record<MessageKey, string> = {
-  // Ticket 17 fills real Simplified Chinese; stubs render English for now.
-  ...en,
+  // --- common ---
+  'common.you': '你',
+  'common.yourself': '自己',
+  'common.listAnd': ' 和 ',
+  'common.listComma': '、',
+  'common.leaveConfirm': '确定要离开游戏吗？你的座位将立即释放。',
+
+  // --- App ---
+  'app.connecting': '连接中…',
+  'app.connectionLost': '连接已断开——刷新页面以恢复你的座位。掉线后房间会保留一分钟。',
+  'app.backHome': '返回首页',
+
+  // --- Home ---
+  'home.tagline': '适合 2–4 人的风险、推理与运气游戏。',
+  'home.yourName': '你的名字',
+  'home.namePlaceholder': '例如：小明',
+  'home.players': '玩家人数',
+  'home.createRoom': '创建房间',
+  'home.or': '或',
+  'home.roomCode': '房间代码',
+  'home.joinRoom': '加入房间',
+
+  // --- Lobby ---
+  'lobby.room': '房间 {code}',
+  'lobby.tagline': '与好友分享此代码——座位满员后自动开始对局。',
+  'lobby.you': '你',
+  'lobby.reconnecting': '重新连接中…',
+  'lobby.waiting': '等待中…',
+  'lobby.statusWaiting': '已就座 {seated}/{capacity} 人——等待其余玩家…',
+  'lobby.statusStarting': '已就座 {seated}/{capacity} 人——开始！',
+  'lobby.leaveGame': '离开游戏',
+
+  // --- Game header ---
+  'game.room': '房间 {code}',
+  'game.round': '第 {number} 轮',
+  'game.deck': '牌库：{count}',
+  'game.leaveGame': '离开游戏',
+  'game.turnBanner': '轮到你了——打出一张牌。',
+  'game.emptyHand': '你的手牌为空。',
+  'game.faceUp': '移除的明牌：{cards}',
+  'game.burned': '移除的暗牌——所有人都不知道',
+  'game.roundWonTail': '赢得了这一轮。',
+  'game.startNextRound': '开始下一轮',
+  'game.matchWon': '{name} 赢得了比赛！',
+  'game.matchRematch': '先到 {count} 枚徽记者胜——用相同座位再来一局？',
+  'game.rematch': '再来一局',
+  'game.protected': '你受到侍女的保护',
+  'game.abilities': '卡牌能力',
+
+  // --- Table panel ---
+  'table.title': '牌桌',
+  'table.youSuffix': '（你）',
+  'table.tokensTitle': '赢得的徽记（爱心）',
+  'table.turn': '回合',
+  'table.protected': '受保护',
+  'table.out': '出局',
+  'table.reconnecting': '重新连接中…',
+  'table.discards': '弃牌：{count}',
+  'table.hand': '手牌',
+  'table.handTitle': '手牌：{count}',
+
+  // --- Choice prompts ---
+  'choice.priest': '你的祭司：你想查看谁的手牌？',
+  'choice.baron': '你的男爵：你要与谁较量？',
+  'choice.prince': '你的王子：谁弃牌并抽新牌？',
+  'choice.king': '你的国王：你要与谁交换手牌？',
+  'choice.guard': '你的守卫：你指控谁，指控其持有哪张牌？',
+  'choice.choosing': '{name} 正在选择…',
+  'choice.someone': '某人',
+
+  // --- Chat ---
+  'chat.title': '聊天',
+  'chat.empty': '暂无消息。',
+  'chat.placeholder': '说点什么…',
+  'chat.send': '发送',
+
+  // --- Log ---
+  'log.play': '{name} 打出了 {card}',
+  'log.fizzle': '{name} 的 {card} 没有合法目标',
+  'log.choice.self': '你必须选择一名目标玩家和一张卡牌',
+  'log.choice.other': '{name} 正在选择…',
+  'log.guard': '{name} 猜测 {target} 持有 {card}',
+  'log.baron': '{name} 与 {target} 比较了手牌',
+  'log.prince': '{name} 对 {target} 使用了王子',
+  'log.king': '{name} 与 {target} 交换了手牌',
+  'log.peek.self': '你查看了 {target} 的手牌',
+  'log.peek.selfCard': '你查看了 {target} 的手牌：{card}',
+  'log.peek.other': '{name} 查看了 {target} 的手牌',
+  'log.discard.countess': '{name} 弃掉了伯爵夫人（强制）',
+  'log.discard.prince': '{name} 弃掉了 {card}（王子）',
+  'log.reveal': '{name} 亮出了 {card}',
+  'log.eliminate.out': '{name} 出局',
+  'log.eliminate.fold': '{name} 掉线，已出局',
+  'log.round.last': '{names} 赢得了这一轮（最后存活）',
+  'log.round.hand': '{names} 赢得了这一轮（手牌最大）',
+  'log.match': '{name} 赢得了比赛！',
+  'log.join': '{name} 加入了',
+  'log.leave': '{name} 离开了游戏',
+  'log.info.roomCreated': '房间 {roomCode} 已创建',
+  'log.info.roundStarted': '第 {roundNumber} 轮开始',
+  'log.info.rematchStarted': '重新比赛——新的一场对局开始',
+  'log.info.choiceAbandoned': '{name} 离开了——其选择被放弃',
+  'log.info.playerGone': '{name} 掉线——座位保留',
+  'log.info.playerBack': '{name} 重新连接',
+
+  // --- Errors and room teardown ---
+  'error.unknown': '出了点问题。',
+  'error.invalid_json': '无法解析请求。',
+  'error.unknown_packet': '未知的请求类型：{type}',
+  'error.already_in_room': '你已在房间中。',
+  'error.room_not_found': '找不到房间。',
+  'error.not_in_room': '你不在房间中。',
+  'error.invalid_packet': '无效请求。',
+  'error.cannot_leave_room': '你无法离开此房间。',
+  'error.invalid_resume_packet': '无效的恢复请求。',
+  'error.no_seat_found': '找不到该玩家的座位。',
+  'error.empty_chat': '消息不能为空。',
+  'error.room_missing': '房间不存在。',
+  'error.room_already_exists': '房间已存在。',
+  'error.invalid_room_code': '无效的房间代码。',
+  'error.invalid_capacity': '人数必须为 2–4 人。',
+  'error.invalid_player_name': '无效的玩家名。',
+  'error.room_already_started': '房间已开始对局。',
+  'error.room_full': '房间已满。',
+  'error.not_in_round': '当前不在回合中。',
+  'error.pending_choice_open': '请先完成待定的选择。',
+  'error.not_your_turn': '还没轮到你。',
+  'error.out_of_round': '你已出局。',
+  'error.invalid_hand_index': '无效的手牌位置。',
+  'error.no_card_at_index': '该位置没有牌。',
+  'error.countess_forced': '持有国王或王子时必须弃掉伯爵夫人。',
+  'error.no_pending_choice': '没有待定的选择。',
+  'error.not_your_choice': '这不是你要做的选择。',
+  'error.choice_mismatch': '选择与待定选择不匹配。',
+  'error.illegal_target': '非法目标。',
+  'error.illegal_named_card': '非法指定的卡牌。',
+  'error.no_round_to_start': '没有待开始的回合。',
+  'error.match_not_over': '比赛尚未结束。',
+  'error.no_round_in_progress': '当前没有进行中的回合。',
+  'error.fold_turn_owner_only': '只有当前回合玩家可以被弃牌处理。',
+  'error.player_not_in_round': '该玩家不在本回合中。',
+  'error.fold_last_player': '回合中最后一名玩家不能被弃牌处理。',
+  'error.player_not_in_room': '该玩家不在本房间中。',
+  'error.room_needs_two': '房间内至少需要两名玩家。',
+  'error.roomClosed.player_left': '{name} 离开了游戏——比赛结束',
+  'error.roomClosed.no_show': '{name} 未能返回——比赛结束',
 };
 
 export const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, zh };

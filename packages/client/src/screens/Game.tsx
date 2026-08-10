@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Card, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Rank, ViewState } from '@love-letter/core';
 import type { Game } from '../useGame';
-import { useLocale } from '../i18n';
+import { useLocale, joinLocalizedList } from '../i18n';
 import { formatLogEntry, type LogContext } from '../i18n/logFormat';
 
 export function Game({ view, selfId, game }: { view: ViewState; selfId: string; game: Game }) {
@@ -75,7 +75,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
             {view.phase === 'roundEnded' && (
               <div className="panel round-over">
                 <p>
-                  <strong>{view.roundWinnerIds.map((id) => playerName(id)).join(t('common.listAnd'))}</strong>{' '}
+                  <strong>{joinLocalizedList(view.roundWinnerIds.map((id) => playerName(id)), t)}</strong>{' '}
                   {t('game.roundWonTail')}
                 </p>
                 <button onClick={game.sendNextRound}>{t('game.startNextRound')}</button>
