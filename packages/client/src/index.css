@@ -158,6 +158,32 @@ button:disabled {
   display: block;
 }
 
+/* --- Language toggle (ticket 15, ADR-0004) --- */
+
+.locale-toggle {
+  display: inline-flex;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+}
+
+.locale-toggle button {
+  padding: 0.2rem 0.8rem;
+  font-size: 0.8rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.locale-toggle button.active {
+  background: var(--ink);
+  color: #fff;
+}
+
 
 .seats {
   list-style: none;

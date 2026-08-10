@@ -56,5 +56,10 @@ export type ServerPacket =
   | { type: 'chatLog'; messages: ChatMessage[] }
   | { type: 'playerGone'; playerId: string; name: string }
   | { type: 'playerBack'; playerId: string; name: string }
-  | { type: 'roomClosed'; reason: string }
-  | { type: 'error'; message: string };
+  /** Terminal teardown notice — a code plus params, translated client-side (ADR-0005). */
+  | { type: 'roomClosed'; code: string; params?: WireParams }
+  /** An illegal request rejected — a code plus params, translated client-side (ADR-0005). */
+  | { type: 'error'; code: string; params?: WireParams };
+
+/** Params that travel with an error/roomClosed code (ADR-0005). */
+export type WireParams = Record<string, string | number>;

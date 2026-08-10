@@ -4,12 +4,14 @@
  */
 
 import { useGame } from './useGame';
+import { useLocale } from './i18n';
 import { Home } from './screens/Home';
 import { Lobby } from './screens/Lobby';
 import { Game } from './screens/Game';
 
 export function App() {
   const game = useGame();
+  const { t, tCode } = useLocale();
 
   if (game.left) {
     // Intentionally left: Home, with the fresh socket still connecting.
@@ -20,8 +22,8 @@ export function App() {
     return (
       <div className="screen">
         <div className="panel room-closed">
-          <p>{game.roomClosed}</p>
-          <button onClick={game.goHome}>Back to Home</button>
+          <p>{tCode(game.roomClosed.code, game.roomClosed.params)}</p>
+          <button onClick={game.goHome}>{t('app.backHome')}</button>
         </div>
       </div>
     );
@@ -30,7 +32,7 @@ export function App() {
   if (game.status === 'connecting') {
     return (
       <div className="screen">
-        <p className="muted">Connecting…</p>
+        <p className="muted">{t('app.connecting')}</p>
       </div>
     );
   }
@@ -38,7 +40,7 @@ export function App() {
   if (game.status === 'closed') {
     return (
       <div className="screen">
-        <p className="muted">Connection lost — refresh to resume your seat. Your room is held for a minute after the drop.</p>
+        <p className="muted">{t('app.connectionLost')}</p>
       </div>
     );
   }
@@ -51,7 +53,7 @@ export function App() {
     <>
       {game.error !== null && (
         <div className="error-banner" onClick={game.clearError}>
-          {game.error}
+          {tCode(game.error.code, game.error.params)}
         </div>
       )}
       {game.view.phase === 'lobby' ? (

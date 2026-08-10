@@ -152,7 +152,7 @@ describe('leave from a round (3+ players)', () => {
     const result = leave(s, 'A');
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toMatch(/one player/);
+    expect(result.error).toBe('room_needs_two');
   });
 });
 

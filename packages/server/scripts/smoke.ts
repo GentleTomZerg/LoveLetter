@@ -144,7 +144,7 @@ async function connect(port: number): Promise<TestClient> {
 function assertNoErrors(...clients: TestClient[]): void {
   for (const c of clients) {
     const err = c.packets.find((p): p is Extract<ServerPacket, { type: 'error' }> => p.type === 'error');
-    assert.equal(err, undefined, `unexpected error packet: ${err?.message}`);
+    assert.equal(err, undefined, `unexpected error packet: ${err?.code}`);
   }
 }
 
@@ -285,8 +285,8 @@ async function runFullMatch(port: number): Promise<void> {
   const winner = alice.view!.players.find((p) => p.id === alice.view!.matchWinnerId);
   assert.ok(winner, 'a match winner exists');
   assert.ok(winner.tokens >= 7, `winner has ${winner.tokens} tokens`);
-  const winnerText = alice.view!.log.find((e) => e.kind === 'match')?.text;
-  assert.ok(winnerText && winnerText.includes('won the match'), `match log entry present: ${winnerText}`);
+  const winnerText = alice.view!.log.find((e) => e.kind === 'match')?.params;
+  assert.ok(winnerText && winnerText.winnerId === alice.view!.matchWinnerId, `match log entry present: ${JSON.stringify(winnerText)}`);
 
   // --- rematch -------------------------------------------------------------
   alice.send({ type: 'rematch' });
@@ -302,7 +302,7 @@ async function runFullMatch(port: number): Promise<void> {
   bob.send({ type: 'playCard', which: 0 });
   const err = await bob.waitFor((p) => p.type === 'error');
   assert.equal(err.type, 'error');
-  assert.match(err.message, /not your turn/);
+  assert.equal(err.code, 'not_your_turn');
 
   // --- joining a full room is rejected -------------------------------------
   const carol = await connect(port);
@@ -431,7 +431,7 @@ async function runGraceFold(port: number): Promise<void> {
   // player gets a roomClosed notice and the room is torn down.
   const closed = await bob.waitFor((p) => p.type === 'roomClosed', 3000);
   assert.equal(closed.type, 'roomClosed');
-  assert.match(closed.reason, /didn't return/);
+  assert.equal(closed.code, 'no_show');
   await once(bob.ws, 'close'); // deleteRoom closes the remaining socket
 
   // --- a seat held within grace still resumes (Q12 unchanged) --------------
@@ -460,7 +460,7 @@ async function runGraceFold(port: number): Promise<void> {
   const lost = await connect(port);
   lost.send({ type: 'resume', playerId: c1.selfId!, lastEventId: 0 });
   const err = await lost.waitFor((p) => p.type === 'error');
-  assert.match(err.message, /no seat found/);
+  assert.equal(err.code, 'no_seat_found');
   lost.close();
 }
 
@@ -490,7 +490,7 @@ async function runLeaveAndVisibility(port: number): Promise<void> {
   const ghost = await connect(port);
   ghost.send({ type: 'resume', playerId: a.selfId!, lastEventId: 0 });
   const noSeat = await ghost.waitFor((p) => p.type === 'error');
-  assert.match(noSeat.message, /no seat found/);
+  assert.equal(noSeat.code, 'no_seat_found');
   ghost.close();
   b.close();
   c.close();
@@ -549,12 +549,12 @@ async function runLeaveAndVisibility(port: number): Promise<void> {
   a2.send({ type: 'leave' });
   const closed2 = await b2.waitFor((p) => p.type === 'roomClosed', 3000);
   assert.equal(closed2.type, 'roomClosed');
-  assert.match(closed2.reason, /left the game/);
+  assert.equal(closed2.code, 'player_left');
   await once(b2.ws, 'close'); // the server tears the room down
   const ghost2 = await connect(port);
   ghost2.send({ type: 'resume', playerId: a2.selfId!, lastEventId: 0 });
   const err2 = await ghost2.waitFor((p) => p.type === 'error');
-  assert.match(err2.message, /no seat found/);
+  assert.equal(err2.code, 'no_seat_found');
   ghost2.close();
   b2.close();
 }
@@ -605,7 +605,7 @@ async function runNoShowVacate(port: number): Promise<void> {
   // The vacated seat is no longer resumable.
   const ghost = await carol.resume(false);
   const err = await ghost.waitFor((p) => p.type === 'error', 3000);
-  assert.match(err.message, /no seat found/);
+  assert.equal(err.code, 'no_seat_found');
   ghost.close();
   alice.close();
   bob.close();

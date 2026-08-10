@@ -20,6 +20,8 @@ describe('buildView', () => {
     expect(Object.keys(view.players[1]!)).not.toContain('hand');
     expect(view.players[1]!.discardPile).toEqual([card(2)]);
     expect(view.currentTurn).toBe('A');
+    // the roster maps every player id to a name for log rendering (ADR-0003)
+    expect(view.roster).toEqual({ A: 'Alice', B: 'Bob' });
   });
 });
 
@@ -79,15 +81,16 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
     expect(kinds).toContain('eliminate');
     expect(kinds).toContain('round');
     expect(kinds).toContain('match');
-    expect(view!.log.map((e) => e.text)).toContain('You played Guard');
-    expect(view!.log.map((e) => e.text)).toContain('You guessed Bob has Priest');
+    // structured entries carry ids and ranks, never display text (ADR-0003)
+    expect(view!.log).toContainEqual({ kind: 'play', params: { playerId: 'A', rank: 1 }, id: expect.any(Number) });
+    expect(view!.log).toContainEqual({ kind: 'guard', params: { playerId: 'A', targetId: 'B', rank: 2 }, id: expect.any(Number) });
   });
 
   it('renders the other player’s perspective with names, not "You"', () => {
     let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), OTHER);
     view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, OTHER);
     view = reduceView(view, { type: 'cardPlayed', playerId: 'A', which: 0, card: card(1) }, OTHER);
-    expect(view!.log.map((e) => e.text)).toContain('Alice played Guard');
+    expect(view!.log).toContainEqual({ kind: 'play', params: { playerId: 'A', rank: 1 }, id: expect.any(Number) });
   });
 
   it('rematchStarted resets tokens and the scoreboard', () => {
@@ -103,30 +106,30 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
     view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
 
     view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { kind: 'prince', targetPlayerId: OTHER } }, SELF);
-    expect(view!.log.at(-1)!.text).toBe('You targeted Bob with the Prince');
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'prince', params: { playerId: 'A', targetId: 'B' } });
 
     view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { kind: 'prince', targetPlayerId: SELF } }, SELF);
-    expect(view!.log.at(-1)!.text).toBe('You targeted yourself with the Prince');
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'prince', params: { playerId: 'A', targetId: 'A' } });
 
     view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { kind: 'baron', targetPlayerId: OTHER } }, SELF);
-    expect(view!.log.at(-1)!.text).toBe('You compared hands with Bob');
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'baron', params: { playerId: 'A', targetId: 'B' } });
 
     view = reduceView(view, { type: 'choiceMade', playerId: SELF, choice: { kind: 'king', targetPlayerId: OTHER } }, SELF);
-    expect(view!.log.at(-1)!.text).toBe('You traded hands with Bob');
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'king', params: { playerId: 'A', targetId: 'B' } });
 
     view = reduceView(view, { type: 'cardDiscarded', playerId: OTHER, card: card(7), reason: 'countess' }, SELF);
-    expect(view!.log.at(-1)!.text).toBe('Bob discarded the Countess (forced)');
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'discard', params: { playerId: 'B', rank: 7, reason: 'countess' } });
     expect(view!.players[1]!.discardPile).toContainEqual(card(7));
 
     view = reduceView(view, { type: 'cardDiscarded', playerId: OTHER, card: card(2), reason: 'prince' }, SELF);
-    expect(view!.log.at(-1)!.text).toBe('Bob discarded Priest (Prince)');
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'discard', params: { playerId: 'B', rank: 2, reason: 'prince' } });
 
     // the Priest peek: with the card for the chooser (self)…
     view = reduceView(view, { type: 'handPeeked', playerId: SELF, targetPlayerId: OTHER, card: card(8) }, SELF);
-    expect(view!.log.at(-1)!.text).toBe("You looked at Bob's hand: Princess");
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'peek', params: { playerId: 'A', targetId: 'B', rank: 8 } });
     // …and without the card for everyone else
     view = reduceView(view, { type: 'handPeeked', playerId: OTHER, targetPlayerId: SELF, card: null }, OTHER);
-    expect(view!.log.at(-1)!.text).toBe("You looked at Alice's hand");
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'peek', params: { playerId: 'B', targetId: 'A' } });
   });
 
   it('keeps the viewer’s own hand in sync when cards leave it', () => {
@@ -224,7 +227,9 @@ describe('reduceView: playerLeft (issue 11)', () => {
     view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
     view = reduceView(view, { type: 'playerLeft', playerId: 'B', name: 'Bob' }, SELF);
     expect(view!.players.map((p) => p.id)).toEqual(['A', 'C']);
-    expect(view!.log.at(-1)).toMatchObject({ kind: 'leave', text: 'Bob left the game' });
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'leave', params: { playerId: 'B' } });
+    // the leaver's name stays resolvable through the roster
+    expect(view!.roster['B']).toBe('Bob');
   });
 
   it('stays consistent when the leaver held the turn and the turn passes on', () => {
@@ -298,13 +303,13 @@ describe('reduceView: public table state from events (replay fidelity)', () => {
     expect(view!.pendingChoice).toEqual(pending);
     view = reduceView(view, { type: 'choiceAbandoned', playerId: 'A' }, OTHER);
     expect(view!.pendingChoice).toBeNull();
-    expect(view!.log.at(-1)!.text).toBe('Alice left — their choice was abandoned');
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'info', params: { what: 'choiceAbandoned', playerId: 'A' } });
   });
 
   it('labels a fold elimination in the log', () => {
     let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), OTHER);
     view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, OTHER);
     view = reduceView(view, { type: 'playerEliminated', playerId: 'A', reason: 'fold' }, OTHER);
-    expect(view!.log.at(-1)!.text).toBe('Alice folded (disconnected)');
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'eliminate', params: { playerId: 'A', reason: 'fold' } });
   });
 });

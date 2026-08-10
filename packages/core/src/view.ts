@@ -7,7 +7,6 @@
  * client would replay later (ticket 05).
  */
 
-import { CARD_INFO } from './cards.js';
 import type { Card, Event, GameState, PendingChoice, Phase } from './types.js';
 export interface PlayerView {
   id: string;
@@ -21,12 +20,19 @@ export interface PlayerView {
   handCount: number;
 }
 
-export type LogKind = 'play' | 'fizzle' | 'choice' | 'peek' | 'discard' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'leave' | 'info';
+export type LogKind = 'play' | 'fizzle' | 'choice' | 'guard' | 'baron' | 'prince' | 'king' | 'peek' | 'discard' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'leave' | 'info';
+
+/**
+ * Structured facts behind a log entry. The client's locale dictionary turns
+ * them into display text (ADR-0003): players are ids (the renderer resolves
+ * "You"/names per locale), cards are ranks, info lines carry a `what` sub-key.
+ */
+export type LogParams = Record<string, string | number | string[]>;
 
 export interface LogEntry {
   id: number;
   kind: LogKind;
-  text: string;
+  params: LogParams;
 }
 
 /** Everything one player sees, including their own (private) hand. */
@@ -47,6 +53,8 @@ export interface ViewState {
   hand: Card[];
   log: LogEntry[];
   logSeq: number;
+  /** Every player who ever joined, id → name (never shrinks) — historical log lines resolve names after a player leaves. */
+  roster: Record<string, string>;
 }
 
 /** Build a snapshot of the state from `selfId`'s point of view. */
@@ -77,6 +85,7 @@ export function buildView(state: GameState, selfId: string): ViewState {
     hand: self ? [...self.hand] : [],
     log: [],
     logSeq: 0,
+    roster: Object.fromEntries(state.players.map((p) => [p.id, p.name])),
   };
 }
 
@@ -97,19 +106,16 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
   if (view === null) return null;
   const v = structuredClone(view);
 
-  const name = (id: string) =>
-    id === selfId ? 'You' : (v.players.find((p) => p.id === id)?.name ?? id);
-  const targetName = (id: string) => (id === selfId ? 'yourself' : name(id));
-  const log = (kind: LogKind, text: string) => {
+  const log = (kind: LogKind, params: LogParams) => {
     v.logSeq += 1;
-    v.log.push({ id: v.logSeq, kind, text });
+    v.log.push({ id: v.logSeq, kind, params });
   };
 
   switch (event.type) {
     case 'roomCreated':
       v.roomCode = event.roomCode;
       v.capacity = event.capacity;
-      log('info', `Room ${event.roomCode} created`);
+      log('info', { what: 'roomCreated', roomCode: event.roomCode, capacity: event.capacity });
       break;
 
     case 'playerJoined':
@@ -122,7 +128,8 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
         discardPile: [],
         handCount: 0,
       });
-      log('join', `${event.player.name} joined`);
+      v.roster[event.player.id] = event.player.name;
+      log('join', { playerId: event.player.id });
       break;
 
     case 'rematchStarted':
@@ -137,7 +144,7 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       v.roundWinnerIds = [];
       v.hand = [];
       for (const p of v.players) p.handCount = 0;
-      log('info', 'Rematch — a new match begins');
+      log('info', { what: 'rematchStarted' });
       break;
 
     case 'roundStarted':
@@ -156,7 +163,7 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
         p.handCount = 0;
       }
       v.hand = [];
-      log('info', `Round ${event.roundNumber} begins`);
+      log('info', { what: 'roundStarted', roundNumber: event.roundNumber });
       break;
 
     case 'cardDealt':
@@ -193,46 +200,44 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       if (event.playerId === selfId) {
         v.hand = v.hand.filter((_, i) => i !== event.which);
       }
-      log('play', `${name(event.playerId)} played ${event.card.name}`);
+      log('play', { playerId: event.playerId, rank: event.card.rank });
       break;
     }
 
     case 'cardFizzled':
-      log('fizzle', `${name(event.playerId)}'s ${event.card.name} had no legal target`);
+      log('fizzle', { playerId: event.playerId, rank: event.card.rank });
       break;
 
     case 'choiceRequired':
       v.pendingChoice = event.pendingChoice;
-      log('choice', event.playerId === selfId ? 'You must choose a target and a card' : `${name(event.playerId)} is choosing…`);
+      log('choice', { playerId: event.playerId });
       break;
 
     case 'choiceMade': {
       v.pendingChoice = null;
       const c = event.choice;
-      let text = '';
       switch (c.kind) {
         case 'guard':
-          text = `${name(event.playerId)} guessed ${name(c.targetPlayerId)} has ${CARD_INFO[c.namedRank]?.name ?? `rank ${c.namedRank}`}`;
+          log('guard', { playerId: event.playerId, targetId: c.targetPlayerId, rank: c.namedRank });
           break;
         case 'priest':
           break; // the peek event carries the interesting log line
         case 'baron':
-          text = `${name(event.playerId)} compared hands with ${name(c.targetPlayerId)}`;
+          log('baron', { playerId: event.playerId, targetId: c.targetPlayerId });
           break;
         case 'prince':
-          text = `${name(event.playerId)} targeted ${targetName(c.targetPlayerId)} with the Prince`;
+          log('prince', { playerId: event.playerId, targetId: c.targetPlayerId });
           break;
         case 'king':
-          text = `${name(event.playerId)} traded hands with ${name(c.targetPlayerId)}`;
+          log('king', { playerId: event.playerId, targetId: c.targetPlayerId });
           break;
       }
-      if (text !== '') log('choice', text);
       break;
     }
 
     case 'choiceAbandoned':
       v.pendingChoice = null;
-      log('info', `${name(event.playerId)} left — their choice was abandoned`);
+      log('info', { what: 'choiceAbandoned', playerId: event.playerId });
       break;
 
     case 'handTraded':
@@ -243,14 +248,13 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       if (event.playerId === selfId && event.card) v.hand = [event.card];
       break;
 
-    case 'handPeeked':
-      if (event.playerId === selfId) {
-        const card = event.card ? `: ${event.card.name}` : '';
-        log('peek', `You looked at ${name(event.targetPlayerId)}'s hand${card}`);
-      } else {
-        log('peek', `${name(event.playerId)} looked at ${name(event.targetPlayerId)}'s hand`);
-      }
+    case 'handPeeked': {
+      const params: LogParams = { playerId: event.playerId, targetId: event.targetPlayerId };
+      // Only the peeker's stream carries the card; others just learn a peek happened.
+      if (event.playerId === selfId && event.card) params.rank = event.card.rank;
+      log('peek', params);
       break;
+    }
 
     case 'cardDiscarded': {
       const player = v.players.find((p) => p.id === event.playerId);
@@ -259,9 +263,7 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
         player.handCount -= 1; // Prince target or forced Countess — one card left the hand
       }
       if (event.playerId === selfId) v.hand = removeCard(v.hand, event.card);
-      log('discard', event.reason === 'countess'
-        ? `${name(event.playerId)} discarded the Countess (forced)`
-        : `${name(event.playerId)} discarded ${event.card.name} (Prince)`);
+      log('discard', { playerId: event.playerId, rank: event.card.rank, reason: event.reason });
       break;
     }
 
@@ -272,25 +274,21 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
         player.handCount -= 1; // elimination / deck-empty reveal — the card left their hand
       }
       if (event.playerId === selfId) v.hand = removeCard(v.hand, event.card);
-      log('reveal', `${name(event.playerId)} revealed ${event.card.name}`);
+      log('reveal', { playerId: event.playerId, rank: event.card.rank });
       break;
     }
 
     case 'playerEliminated':
       v.players.find((p) => p.id === event.playerId)!.out = true;
-      log('eliminate', event.reason === 'fold'
-        ? `${name(event.playerId)} folded (disconnected)`
-        : `${name(event.playerId)} is out`);
+      log('eliminate', { playerId: event.playerId, reason: event.reason });
       break;
 
     case 'playerLeft':
       // The seat is gone for good (issue 11) — its row leaves the table.
-      // The event carries the name: the row is removed, so the usual lookup
-      // would find nothing. If the leaver holds the turn, the engine's follow-
-      // up events (turnStarted or roundEnded) fix the view in the same batch.
+      // The roster keeps the name so historical log lines still resolve.
       v.players = v.players.filter((p) => p.id !== event.playerId);
       v.roundWinnerIds = v.roundWinnerIds.filter((id) => id !== event.playerId);
-      log('leave', `${event.name} left the game`);
+      log('leave', { playerId: event.playerId });
       break;
 
     case 'roundEnded':
@@ -302,13 +300,13 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
         const winner = v.players.find((p) => p.id === id);
         if (winner) winner.tokens += 1;
       }
-      log('round', `${event.winnerIds.map(name).join(' and ')} won the round (${event.reason === 'last-standing' ? 'last player standing' : 'highest hand'})`);
+      log('round', { winners: event.winnerIds, reason: event.reason });
       break;
 
     case 'matchEnded':
       v.phase = 'matchEnded';
       v.matchWinnerId = event.winnerId;
-      log('match', `${name(event.winnerId)} won the match!`);
+      log('match', { winnerId: event.winnerId });
       break;
   }
 

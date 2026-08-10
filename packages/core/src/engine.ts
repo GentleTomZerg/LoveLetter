@@ -63,7 +63,7 @@ export function apply(
   // previous state change underneath them.
   const s = state === null ? null : structuredClone(state);
   if (intent.type === 'createRoom') return createRoom(s, intent);
-  if (s === null) return err('room does not exist'); // only createRoom starts from null
+  if (s === null) return err('room_missing'); // only createRoom starts from null
   switch (intent.type) {
     case 'joinRoom': return joinRoom(s, intent, rng);
     case 'playCard': return playCard(s, intent);
@@ -91,12 +91,12 @@ function createRoom(
   s: GameState | null,
   intent: Extract<Intent, { type: 'createRoom' }>,
 ): ApplyResult {
-  if (s !== null) return err('a room already exists');
-  if (!ROOM_CODE_PATTERN.test(intent.roomCode)) return err('invalid room code');
+  if (s !== null) return err('room_already_exists');
+  if (!ROOM_CODE_PATTERN.test(intent.roomCode)) return err('invalid_room_code');
   if (intent.capacity !== 2 && intent.capacity !== 3 && intent.capacity !== 4) {
-    return err('capacity must be 2–4 players');
+    return err('invalid_capacity');
   }
-  if (!validName(intent.playerName)) return err('invalid player name');
+  if (!validName(intent.playerName)) return err('invalid_player_name');
 
   const player = makePlayer(intent.playerId, intent.playerName);
   const state: GameState = {
@@ -125,9 +125,9 @@ function joinRoom(
   intent: Extract<Intent, { type: 'joinRoom' }>,
   rng: () => number,
 ): ApplyResult {
-  if (s.phase !== 'lobby') return err('room has already started');
-  if (s.players.length >= s.capacity) return err('room is full');
-  if (!validName(intent.playerName)) return err('invalid player name');
+  if (s.phase !== 'lobby') return err('room_already_started');
+  if (s.players.length >= s.capacity) return err('room_full');
+  if (!validName(intent.playerName)) return err('invalid_player_name');
 
   const player = makePlayer(intent.playerId, intent.playerName);
   s.players.push(player);
@@ -146,17 +146,17 @@ function joinRoom(
 // ---------------------------------------------------------------------------
 
 function playCard(s: GameState, intent: Extract<Intent, { type: 'playCard' }>): ApplyResult {
-  if (s.phase !== 'round') return err('not in a round');
-  if (s.pendingChoice !== null) return err('a pending choice must be resolved first');
-  if (s.currentTurn !== intent.playerId) return err('not your turn');
+  if (s.phase !== 'round') return err('not_in_round');
+  if (s.pendingChoice !== null) return err('pending_choice_open');
+  if (s.currentTurn !== intent.playerId) return err('not_your_turn');
   const actor = findPlayer(s, intent.playerId);
-  if (!actor || actor.out) return err('you are out of the round');
-  if (intent.which !== 0 && intent.which !== 1) return err('invalid hand index');
+  if (!actor || actor.out) return err('out_of_round');
+  if (intent.which !== 0 && intent.which !== 1) return err('invalid_hand_index');
   const card = actor.hand[intent.which];
-  if (!card) return err('no card at that hand index');
+  if (!card) return err('no_card_at_index');
   // The engine forces the Countess discard at every hand change, so this state
   // should never occur — but never play through an illegal hand (rules §4.7).
-  if (forcedDiscard(actor.hand) !== null) return err('the Countess must be discarded when you hold the King or Prince');
+  if (forcedDiscard(actor.hand) !== null) return err('countess_forced');
 
   actor.hand.splice(intent.which, 1);
   actor.discardPile.push(card);
@@ -254,15 +254,15 @@ function legalTargets(
 }
 
 function makeChoice(s: GameState, intent: Extract<Intent, { type: 'choice' }>): ApplyResult {
-  if (s.phase !== 'round') return err('not in a round');
+  if (s.phase !== 'round') return err('not_in_round');
   const pc = s.pendingChoice;
-  if (pc === null) return err('no pending choice');
-  if (pc.playerId !== intent.playerId) return err('not your choice to make');
-  if (pc.kind !== intent.choice.kind) return err('choice does not match the pending choice');
-  if (!pc.targets.includes(intent.choice.targetPlayerId)) return err('illegal target');
+  if (pc === null) return err('no_pending_choice');
+  if (pc.playerId !== intent.playerId) return err('not_your_choice');
+  if (pc.kind !== intent.choice.kind) return err('choice_mismatch');
+  if (!pc.targets.includes(intent.choice.targetPlayerId)) return err('illegal_target');
   if (pc.kind === 'guard'
     && !pc.namedOptions.includes((intent.choice as Extract<Choice, { kind: 'guard' }>).namedRank)) {
-    return err('illegal named card');
+    return err('illegal_named_card');
   }
 
   const events: Event[] = [{ type: 'choiceMade', playerId: pc.playerId, choice: intent.choice }];
@@ -477,14 +477,14 @@ function highestHandWinners(inRound: PlayerState[]): string[] {
 }
 
 function nextRound(s: GameState, _intent: Extract<Intent, { type: 'nextRound' }>, rng: () => number): ApplyResult {
-  if (s.phase !== 'roundEnded') return err('no round is waiting to start');
+  if (s.phase !== 'roundEnded') return err('no_round_to_start');
   const events: Event[] = [];
   startRound(s, events, rng);
   return ok(s, events);
 }
 
 function rematch(s: GameState, _intent: Extract<Intent, { type: 'rematch' }>, rng: () => number): ApplyResult {
-  if (s.phase !== 'matchEnded') return err('the match is not over');
+  if (s.phase !== 'matchEnded') return err('match_not_over');
   // Same seats, fresh match: tokens reset, every round-only field cleared.
   for (const p of s.players) {
     p.tokens = 0;
@@ -516,12 +516,12 @@ function rematch(s: GameState, _intent: Extract<Intent, { type: 'rematch' }>, rn
  * expiry (one more grace window to return, then the room is reclaimed).
  */
 function foldPlayer(s: GameState, intent: Extract<Intent, { type: 'fold' }>): ApplyResult {
-  if (s.phase !== 'round') return err('no round in progress');
-  if (s.currentTurn !== intent.playerId) return err('only the turn owner may be folded');
+  if (s.phase !== 'round') return err('no_round_in_progress');
+  if (s.currentTurn !== intent.playerId) return err('fold_turn_owner_only');
   const player = findPlayer(s, intent.playerId);
-  if (!player || player.out) return err('player is not in the round');
+  if (!player || player.out) return err('player_not_in_round');
   const others = s.players.filter((p) => !p.out && p.id !== intent.playerId);
-  if (others.length === 0) return err('the last player in the round cannot fold');
+  if (others.length === 0) return err('fold_last_player');
 
   const events: Event[] = [];
   if (s.pendingChoice !== null) {
@@ -544,7 +544,7 @@ function foldPlayer(s: GameState, intent: Extract<Intent, { type: 'fold' }>): Ap
  */
 function leaveRoom(s: GameState, intent: Extract<Intent, { type: 'leave' }>): ApplyResult {
   const idx = s.players.findIndex((p) => p.id === intent.playerId);
-  if (idx === -1) return err('player is not in this room');
+  if (idx === -1) return err('player_not_in_room');
   const player = s.players[idx]!;
   const events: Event[] = [];
 
@@ -554,7 +554,7 @@ function leaveRoom(s: GameState, intent: Extract<Intent, { type: 'leave' }>): Ap
     return ok(s, events);
   }
 
-  if (s.players.length <= 2) return err('the room cannot continue with one player');
+  if (s.players.length <= 2) return err('room_needs_two');
 
   // An open follow-up choice of theirs is void (same as a fold).
   if (s.pendingChoice?.playerId === player.id) {

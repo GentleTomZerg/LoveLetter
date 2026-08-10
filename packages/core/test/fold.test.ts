@@ -104,7 +104,7 @@ describe('fold (server-issued on a dropped socket)', () => {
     const result = fold(s, 'A');
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toMatch(/last player/);
+    expect(result.error).toBe('fold_last_player');
   });
 
   it('keeps the folded player’s seat for the next round', () => {

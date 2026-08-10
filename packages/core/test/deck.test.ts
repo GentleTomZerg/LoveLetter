@@ -84,7 +84,7 @@ describe('forced discard (Countess, rules spec §4.7)', () => {
     expect(forcedDiscard(alice.hand)).toBe(7);
     result = apply(state, { type: 'playCard', playerId: 'A', which: 1 }, rng);
     if (result.ok) throw new Error('expected the Prince play to be rejected');
-    expect(result.error).toMatch(/countess/i);
+    expect(result.error).toBe('countess_forced');
   });
 });
 

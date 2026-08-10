@@ -22,15 +22,27 @@ import type {
   LogEntry,
   ServerPacket,
   ViewState,
+  WireParams,
 } from '@love-letter/core';
 
 export type ConnStatus = 'connecting' | 'open' | 'closed';
+
+/** An error or teardown notice from the server: a code plus params, translated at render (ADR-0005). */
+export interface WireError {
+  code: string;
+  params?: WireParams;
+}
+
+function wireError(code: string, params?: WireParams): WireError {
+  return params === undefined ? { code } : { code, params };
+}
 
 export interface GameState {
   status: ConnStatus;
   selfId: string | null;
   view: ViewState | null;
-  error: string | null;
+  /** The latest rejected request, shown in the error banner. */
+  error: WireError | null;
   /** The log id the view covers; only newer events are folded. */
   lastEventId: number;
   /** Room chat, rendered by the Game screen (ticket 06). */
@@ -41,7 +53,7 @@ export interface GameState {
   activity: LogEntry[];
   activitySeq: number;
   /** Set when the server tears the room down under us (issue 11). */
-  roomClosed: string | null;
+  roomClosed: WireError | null;
   /** True after an intentional leave; the tab is back on Home with a fresh socket. */
   left: boolean;
   /** Re-keys the socket effect so a leave/reset opens a fresh connection. */
@@ -94,7 +106,7 @@ function reducer(state: GameState, action: Action): GameState {
         case 'chatLog':
           return { ...state, chat: [...p.messages] };
         case 'playerGone': {
-          const line: LogEntry = { id: state.activitySeq, kind: 'info', text: `${p.name} disconnected — seat held` };
+          const line: LogEntry = { id: state.activitySeq, kind: 'info', params: { what: 'playerGone', name: p.name } };
           return {
             ...state,
             away: state.away.includes(p.playerId) ? state.away : [...state.away, p.playerId],
@@ -103,7 +115,7 @@ function reducer(state: GameState, action: Action): GameState {
           };
         }
         case 'playerBack': {
-          const line: LogEntry = { id: state.activitySeq, kind: 'info', text: `${p.name} reconnected` };
+          const line: LogEntry = { id: state.activitySeq, kind: 'info', params: { what: 'playerBack', name: p.name } };
           return {
             ...state,
             away: state.away.filter((id) => id !== p.playerId),
@@ -113,9 +125,9 @@ function reducer(state: GameState, action: Action): GameState {
         }
         case 'roomClosed':
           // The room is dead — nothing to resume into.
-          return { ...state, roomClosed: p.reason };
+          return { ...state, roomClosed: wireError(p.code, p.params) };
         case 'error':
-          return { ...state, error: p.message };
+          return { ...state, error: wireError(p.code, p.params) };
       }
     }
   }

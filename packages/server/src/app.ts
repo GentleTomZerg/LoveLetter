@@ -43,6 +43,7 @@ import {
   type GameState,
   type Intent,
   type ServerPacket,
+  type WireParams,
 } from '@love-letter/core';
 import { serveStatic } from './static.js';
 
@@ -132,7 +133,7 @@ export async function createApp(options: AppOptions = {}): Promise<AppHandle> {
       try {
         packet = JSON.parse(raw.toString()) as ClientPacket;
       } catch {
-        sendError(socket, 'invalid JSON');
+        sendError(socket, 'invalid_json');
         return;
       }
       handlePacket(ctx, conn, packet, socket);
@@ -193,7 +194,7 @@ function handlePacket(ctx: ServerContext, conn: Connection, packet: ClientPacket
     case 'resume': return handleResume(ctx, conn, packet, socket);
     case 'chat': return handleChat(conn, packet, socket);
     default:
-      return sendError(socket, `unknown packet type: ${String((packet as { type?: unknown }).type)}`);
+      return sendError(socket, 'unknown_packet', { type: String((packet as { type?: unknown }).type) });
   }
 }
 
@@ -203,7 +204,7 @@ function handleCreateRoom(
   packet: Extract<ClientPacket, { type: 'createRoom' }>,
   socket: WebSocket,
 ): void {
-  if (conn.room !== null) return sendError(socket, 'you are already in a room');
+  if (conn.room !== null) return sendError(socket, 'already_in_room');
   const code = generateRoomCode(ctx.rooms);
   const playerId = randomUUID();
 
@@ -243,10 +244,10 @@ function handleJoinRoom(
   packet: Extract<ClientPacket, { type: 'joinRoom' }>,
   socket: WebSocket,
 ): void {
-  if (conn.room !== null) return sendError(socket, 'you are already in a room');
+  if (conn.room !== null) return sendError(socket, 'already_in_room');
   const code = String(packet.roomCode).trim().toUpperCase();
   const room = ctx.rooms.get(code);
-  if (!room) return sendError(socket, 'room not found');
+  if (!room) return sendError(socket, 'room_not_found');
 
   const playerId = randomUUID();
   const result = apply(room.state, { type: 'joinRoom', playerId, playerName: packet.name });
@@ -268,10 +269,10 @@ function handleJoinRoom(
 }
 
 function handleGameIntent(ctx: ServerContext, conn: Connection, packet: ClientPacket, socket: WebSocket): void {
-  if (conn.room === null || conn.playerId === null) return sendError(socket, 'you are not in a room');
+  if (conn.room === null || conn.playerId === null) return sendError(socket, 'not_in_room');
   const room = conn.room;
   const intent = toIntent(packet, conn.playerId);
-  if (intent === null) return sendError(socket, 'invalid packet');
+  if (intent === null) return sendError(socket, 'invalid_packet');
 
   const result = applyIntentAndBroadcast(ctx, room, intent);
   if (!result.ok) sendError(socket, result.error);
@@ -303,7 +304,7 @@ function applyIntentAndBroadcast(ctx: ServerContext, room: Room, intent: Intent)
  * two seats cannot continue and is torn down with a `roomClosed` notice.
  */
 function handleLeave(ctx: ServerContext, conn: Connection, _packet: Extract<ClientPacket, { type: 'leave' }>, socket: WebSocket): void {
-  if (conn.room === null || conn.playerId === null) return sendError(socket, 'you are not in a room');
+  if (conn.room === null || conn.playerId === null) return sendError(socket, 'not_in_room');
   const room = conn.room;
   const playerId = conn.playerId;
   const name = room.state?.players.find((p) => p.id === playerId)?.name ?? playerId;
@@ -311,12 +312,12 @@ function handleLeave(ctx: ServerContext, conn: Connection, _packet: Extract<Clie
   if (room.state !== null && room.state.phase !== 'lobby' && room.state.players.length <= 2) {
     conn.room = null;
     conn.playerId = null;
-    closeRoom(ctx, room, `${name} left the game — match over`);
+    closeRoom(ctx, room, 'player_left', { name });
     return;
   }
 
   if (!applyIntentAndBroadcast(ctx, room, { type: 'leave', playerId }).ok) {
-    sendError(socket, 'you cannot leave this room');
+    sendError(socket, 'cannot_leave_room');
     return;
   }
 
@@ -343,12 +344,12 @@ function handleLeave(ctx: ServerContext, conn: Connection, _packet: Extract<Clie
 function handleResume(ctx: ServerContext, conn: Connection, packet: Extract<ClientPacket, { type: 'resume' }>, socket: WebSocket): void {
   const { playerId, lastEventId } = packet;
   if (typeof playerId !== 'string' || typeof lastEventId !== 'number' || !Number.isFinite(lastEventId)) {
-    return sendError(socket, 'invalid resume packet');
+    return sendError(socket, 'invalid_resume_packet');
   }
   const code = ctx.playerRooms.get(playerId);
   const room = code !== undefined ? ctx.rooms.get(code) : undefined;
   if (!room || room.state === null || !room.state.players.some((p) => p.id === playerId)) {
-    return sendError(socket, 'no seat found for this player');
+    return sendError(socket, 'no_seat_found');
   }
 
   // If this socket was bound to another seat, that seat is now abandoned —
@@ -384,10 +385,10 @@ function handleResume(ctx: ServerContext, conn: Connection, packet: Extract<Clie
 }
 
 function handleChat(conn: Connection, packet: Extract<ClientPacket, { type: 'chat' }>, socket: WebSocket): void {
-  if (conn.room === null || conn.playerId === null) return sendError(socket, 'you are not in a room');
+  if (conn.room === null || conn.playerId === null) return sendError(socket, 'not_in_room');
   const room = conn.room;
   const text = typeof packet.text === 'string' ? packet.text.trim() : '';
-  if (text.length === 0) return sendError(socket, 'empty chat message');
+  if (text.length === 0) return sendError(socket, 'empty_chat');
 
   const player = room.state?.players.find((p) => p.id === conn.playerId);
   const message: ChatMessage = {
@@ -499,7 +500,7 @@ function vacateNoShows(ctx: ServerContext, room: Room): void {
     if (!room.state.players.some((p) => p.id === playerId)) continue; // already gone
     if (room.state.players.length <= 2) {
       const name = room.state.players.find((p) => p.id === playerId)?.name ?? playerId;
-      closeRoom(ctx, room, `${name} didn't return — the match is over`);
+      closeRoom(ctx, room, 'no_show', { name });
       return;
     }
     if (applyIntentAndBroadcast(ctx, room, { type: 'leave', playerId }).ok) {
@@ -521,9 +522,10 @@ function scheduleRoomExpiry(ctx: ServerContext, room: Room): void {
 
 /** Issue 11: a room that can no longer sustain a match gets a terminal notice
  *  on every open socket, then is torn down (which closes those sockets). */
-function closeRoom(ctx: ServerContext, room: Room, reason: string): void {
+function closeRoom(ctx: ServerContext, room: Room, code: string, params?: WireParams): void {
   for (const [, ws] of room.sockets) {
-    if (ws.readyState === WebSocket.OPEN) sendJson(ws, { type: 'roomClosed', reason });
+    if (ws.readyState !== WebSocket.OPEN) continue;
+    sendJson(ws, params === undefined ? { type: 'roomClosed', code } : { type: 'roomClosed', code, params });
   }
   deleteRoom(ctx, room.code);
 }
@@ -598,8 +600,8 @@ function sendJson(ws: WebSocket, packet: ServerPacket): void {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(packet));
 }
 
-function sendError(ws: WebSocket, message: string): void {
-  sendJson(ws, { type: 'error', message });
+function sendError(ws: WebSocket, code: string, params?: WireParams): void {
+  sendJson(ws, params === undefined ? { type: 'error', code } : { type: 'error', code, params });
 }
 
 // ---------------------------------------------------------------------------

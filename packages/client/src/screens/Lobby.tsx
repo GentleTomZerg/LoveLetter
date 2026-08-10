@@ -1,4 +1,5 @@
 import type { ViewState } from '@love-letter/core';
+import { useLocale } from '../i18n';
 
 export function Lobby({
   view,
@@ -11,18 +12,17 @@ export function Lobby({
   away: string[];
   onLeave: () => void;
 }) {
+  const { t } = useLocale();
   const seats = Array.from({ length: view.capacity }, (_, i) => view.players[i]);
 
   const leave = () => {
-    if (window.confirm('Leave the game? Your seat will be freed immediately.')) onLeave();
+    if (window.confirm(t('common.leaveConfirm'))) onLeave();
   };
 
   return (
     <div className="screen lobby">
-      <h1>Room {view.roomCode}</h1>
-      <p className="tagline">
-        Share this code with your friends — the match starts automatically when all seats are full.
-      </p>
+      <h1>{t('lobby.room', { code: view.roomCode })}</h1>
+      <p className="tagline">{t('lobby.tagline')}</p>
 
       <ul className="seats">
         {seats.map((player, i) => (
@@ -30,23 +30,24 @@ export function Lobby({
             {player ? (
               <>
                 <span className="name">{player.name}</span>
-                {player.id === selfId && <span className="badge">you</span>}
-                {away.includes(player.id) && <span className="badge away-badge">reconnecting…</span>}
+                {player.id === selfId && <span className="badge">{t('lobby.you')}</span>}
+                {away.includes(player.id) && <span className="badge away-badge">{t('lobby.reconnecting')}</span>}
               </>
             ) : (
-              <span className="name muted">Waiting…</span>
+              <span className="name muted">{t('lobby.waiting')}</span>
             )}
           </li>
         ))}
       </ul>
 
       <p className="status">
-        {view.players.length}/{view.capacity} players seated
-        {view.players.length < view.capacity ? ' — waiting for the rest…' : ' — starting!'}
+        {view.players.length < view.capacity
+          ? t('lobby.statusWaiting', { seated: view.players.length, capacity: view.capacity })
+          : t('lobby.statusStarting', { seated: view.players.length, capacity: view.capacity })}
       </p>
 
       <button className="leave-button" onClick={leave}>
-        Leave game
+        {t('lobby.leaveGame')}
       </button>
     </div>
   );

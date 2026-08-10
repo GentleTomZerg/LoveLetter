@@ -16,5 +16,6 @@ export {
   type PlayerView,
   type LogEntry,
   type LogKind,
+  type LogParams,
 } from './view.js';
-export type { ClientPacket, ServerPacket, ChatMessage } from './protocol.js';
+export type { ClientPacket, ServerPacket, ChatMessage, WireParams } from './protocol.js';
