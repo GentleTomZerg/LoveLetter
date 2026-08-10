@@ -14,6 +14,7 @@
     "dev": "concurrently -n server,client -c blue,green \"npm run dev --workspace @love-letter/server\" \"npm run dev --workspace @love-letter/client\"",
     "dev:server": "npm run dev --workspace @love-letter/server",
     "dev:client": "npm run dev --workspace @love-letter/client",
+    "stop": "bash scripts/dev-stop.sh",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:watch": "npm run test:watch --workspace @love-letter/core",
