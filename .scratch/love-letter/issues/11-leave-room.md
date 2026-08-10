@@ -1,40 +1,74 @@
 # 11 — No way to leave a room; a closed tab keeps the seat forever
 
-**What to build:** an intentional "leave" so a player who quits actually leaves — closing the browser currently keeps the seat occupied (grace → auto-fold → seat kept next round), with no way to free it for a new player.
+**What to build:** an intentional "leave" plus a visible no-show rule, so a player who quits actually leaves — closing the browser currently keeps the seat occupied (grace → auto-fold → seat kept next round), with no sign to the table that anyone is gone and no way to free a seat.
 
 **Blocked by:** none
 
-**Status:** needs-info
+**Status:** ready-for-agent
 
 ## Symptom (reported from real play, iPhones)
 
 "When user leave the browser, he doesn't logout, still there, not quit." Confirmed in code: there is no `leave` concept anywhere (`protocol.ts`, `useGame.ts`, `app.ts`). The only exits are an accidental-drop grace window (60s) and room expiry when the last socket leaves. A player who closes the tab mid-match is auto-folded when their turn comes, but their seat is kept for every subsequent round — a ghost that can never be filled.
 
+Two further gaps surfaced during discussion:
+- The drop is **invisible**: nothing is broadcast when a socket closes, so the remaining players see no sign a player is gone until their turn comes and the fold fires (up to a full round later). On the dropped side, the only hint is the client's "Connection lost — refresh to resume" screen.
+- A no-show seat is kept **forever**: grace → fold → seat kept every round. In 2p this is a token farm — the remaining player beats an auto-folding ghost every round to the match target, with no way to end it early or free the seat.
+
 ## Design tension
 
-DESIGN Q12 deliberately holds a dropped seat for `graceMs` so a refresh/reconnect is seamless. The missing piece is the *intentional* exit. The fix must not break accidental-drop recovery.
+DESIGN Q12 deliberately holds a dropped seat for `graceMs` so a refresh/reconnect is seamless. The missing pieces are the *intentional* exit and a *visible, bounded* consequence for no-shows. The fix must not break accidental-drop recovery.
 
-## What to decide (needs the maintainer's call)
+## Decisions (locked with the maintainer, 2026-08-10)
 
-What should "Leave game" do in each state?
+### 1. Leave button — intent, irreversible, with confirm
 
-- **Lobby:** remove the player from the seats so the room can refill — clearly yes.
-- **Mid-round (2p):** if a player quits, should the round/match continue (fold + free the seat) or should the match just end for everyone?
-- **Mid-round (3–4p):** same, plus what happens to their tokens/seat for later rounds — freed for a new player, or held?
-- **Last player leaving:** existing room-expiry behaviour already covers this.
+- A "Leave game" button in the lobby and the game header, behind a confirm step.
+- Client: send `leave`, clear the stored `playerId` from `sessionStorage` (so a refresh never resumes), navigate Home. Fire-and-forget — leaving is always legal, so the client doesn't wait for an ack.
+- Server: unbind the socket **before** closing it (`conn.room = null`), so the close handler no-ops and **no grace window starts** — this is how intent is told apart from accident. Remove the seat via the new engine `leave` intent; drop the `playerRooms` entry.
+- Irreversible: the old identity is dead. Rejoining later means a fresh identity — same room in the lobby, or elsewhere mid-match.
+
+### 2. Drop visibility — room-layer packets, like chat, not log events
+
+The engine doesn't know about sockets (chat set the precedent: room-layer facts live outside the event log). New broadcast packets + snapshot state:
+
+- `playerGone { playerId }` on socket close → scoreboard shows an **away badge** ("reconnecting…"), log line "Alice disconnected — her seat is held".
+- `playerBack { playerId }` on resume → badge clears, log line "Alice reconnected".
+- The snapshot carries the away set, so a reconnecting player's fresh view still knows who's away.
+- Grace expiry → the existing fold ("folded (disconnected)") keeps the round moving.
+- Guard: only broadcast `playerGone` for a genuine drop (the close handler already checks the socket is still the seat's current one; `markSeatGone` calls from `handleResume` seat-abandonment should suppress the broadcast).
+
+### 3. No-show rule — vacate at the next safe point (the ghost fix)
+
+One rule: **once grace has expired and the owner still hasn't returned, the seat is vacated at the next safe point — the end of the current round (immediately if no round is in progress).** Implemented as a server-side sweep at round end that invokes the same engine `leave` intent as the button.
+
+- 3–4p: seat vacated between rounds; the match continues with fewer players. **No mid-match refill** (deliberate: token-inheritance and fairness questions; a small engine change can add `roundEnded` joins later).
+- 2p: the round completes, then the vacate leaves one player → match-over message + teardown (see below). At most one farm round, instead of seven.
+- Resume before the sweep → seat kept; nothing lost. Q12 accident recovery is untouched.
+- Token target stays fixed at the room's original capacity target (a 4p room reduced to 2p still plays to 4; 2p rules for face-up removals apply since `startRound` keys off `players.length`).
+
+### 4. Two-player teardown — server-side, no new phase
+
+A 2p room can't survive losing a seat, and a round can't end with nobody. The engine keeps its invariants; the *server* decides the room is unplayable: send a terminal packet (`roomClosed { reason }`, e.g. "Alice left the game — match over") to the remaining socket, then tear the room down. Triggered by the button (immediate) and by the no-show sweep (after the round completes). No `matchEnded` abuse, no new phase in the state machine.
 
 ## Probable implementation shape
 
-- New protocol packet C→S `leave`; server removes the seat (room-side) and applies an engine intent or direct state change (careful: the engine owns state; a new `leave` intent or reuse of `fold` semantics needs a decision).
-- Client: a "Leave game" button (header, scoreboard, or chat sidebar), returning to Home; the stored playerId cleared so a refresh doesn't resume.
-- Broadcast a `playerLeft`-style event so the table/log stay consistent.
+- **Protocol**: C→S `leave`; S→C `playerGone` / `playerBack` / `roomClosed`; `snapshot` carries the away set.
+- **Engine** (`engine.ts`): one new `leave` intent, valid in lobby / round / roundEnded:
+  - lobby: remove from `players`.
+  - round: reveal the hand (same as a fold), abandon a pending choice if theirs, advance the turn / end the round if one in-round player remains. Rejected only if the room would drop below 2 players mid-round (the server tears down instead).
+  - roundEnded: remove from `players`.
+- **Server** (`app.ts`): `leave` handler (unbind → apply → broadcast → cleanup); broadcast `playerGone`/`playerBack`; round-end sweep that `leave`s expired no-shows; 2p teardown (`roomClosed` + `deleteRoom`); away set stamped into snapshots.
+- **Client** (`useGame.ts`, `App.tsx`, screens): Leave button + confirm; clear `sessionStorage` on leave; away badge on the scoreboard; log lines for disconnect/reconnect/leave; Home screen for `roomClosed`.
 
 ## Acceptance
 
-- [ ] A player can voluntarily leave from the lobby and from mid-match
-- [ ] Leaving frees the seat (a new player can join where a seat is free)
-- [ ] Accidental-drop grace/resume still works for a browser refresh
-- [ ] The remaining players' views update cleanly (no ghost seat)
+- [ ] A player can voluntarily leave from the lobby and from mid-match (confirm step; identity cleared; refresh lands on Home, never resumes)
+- [ ] Leaving frees the seat — a new player can join where a seat is free (lobby)
+- [ ] 2p: leaving or no-showing ends the match for the remaining player with a clear message; the room is torn down
+- [ ] A dropped player is visible to the table: away badge + log on drop, cleared on resume
+- [ ] A no-show seat is vacated at the next safe point (round end) after grace expires; the match continues with fewer players in 3–4p
+- [ ] Accidental-drop grace/resume still works for a browser refresh (Q12 unchanged)
+- [ ] The remaining players' views update cleanly (no ghost seat, no dangling current-turn reference)
 
 ## Comments
 
@@ -55,18 +89,6 @@ What should "Leave game" do in each state?
 
 - `joinRoom` is **lobby-phase only** (`engine.ts:127`); once a match starts, seats are locked until `matchEnded`, and `rematch` keeps the same seats. So "leave so a friend can take over your seat" is impossible today — a seat freed mid-match cannot be filled by anyone without an engine change (e.g. allow joining during `roundEnded`, before `nextRound`).
 - The engine **refuses to fold the last in-round player** (a round can't end with nobody) — in 2-player, a leaver cannot be folded mid-round; something else must happen (match ends for the rest, or the room closes).
+- The 2p no-show today is a **token farm**: the ghost is dealt back in each round (`startRound` resets `out`), folds again on its turn, and the remaining player farms tokens to the match target.
 
-### Proposed v1 (for reaction)
-
-- A **"Leave game" button** (lobby + game header), with a confirm step.
-- **Lobby:** removes the seat; room refills (works with today's engine).
-- **Mid-round 3–4p:** folds them out of the current round (hand revealed, same as a grace-fold), seat freed at round end, and the engine allows a new player to **join during `roundEnded`** (before `nextRound`) when a seat is free.
-- **Mid-round 2p:** the match ends for the remaining player with a clear message ("Alice left the game") — they can start a new room.
-- **Identity:** leave clears `sessionStorage` → the tab lands on Home, fresh.
-- **Accidents unchanged:** 60s grace + resume stays exactly as is.
-
-### Open questions
-
-1. Seat-refill between rounds (the `roundEnded` join): worth the engine change, or should a leaver's seat just stay empty for the rest of the match?
-2. 2-player leave: end the match, or close the room entirely?
-3. Rejoin: should leave be irreversible (identity cleared immediately), or keep the seat holdable until round end so they can change their mind?
+**Resolved by the 2026-08-10 decisions above.** Notes for the implementer: reveal the leaver's hand for log consistency (same as a fold); leaving is always legal (never rejected, so the client can go fire-and-forget); a stale tab's leftover `resume` after a leave correctly fails with "no seat found" and self-clears the stored identity. Out of scope (separate tickets): automatic reconnect instead of the manual "refresh to resume" step; mid-match seat refill at `roundEnded`; a host "kick" feature.

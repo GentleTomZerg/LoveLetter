@@ -370,6 +370,47 @@ button:disabled {
   color: #2b5bb3;
 }
 
+/* A dropped seat, still within its grace window (issue 11). */
+.away-badge {
+  background: var(--warn-soft);
+  color: var(--warn);
+  animation: away-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes away-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* The intentional exit in the game header and the lobby (issue 11). */
+.leave-button {
+  margin-left: auto;
+  padding: 0.15rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.leave-button:hover {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+/* The roomClosed terminal screen (issue 11). */
+.room-closed {
+  text-align: center;
+  margin: 3rem auto;
+  max-width: 26rem;
+}
+
+.room-closed p {
+  margin: 0 0 1rem;
+}
+
 .turn-banner {
   font-weight: 700;
   margin: 0.25rem 0 0;
@@ -645,6 +686,11 @@ button:disabled {
 
 .log-eliminate {
   color: var(--warn);
+}
+
+.log-leave {
+  color: var(--warn);
+  font-weight: 600;
 }
 
 .log-reveal {

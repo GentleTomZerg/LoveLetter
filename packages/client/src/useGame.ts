@@ -19,6 +19,7 @@ import type {
   ChatMessage,
   Choice,
   ClientPacket,
+  LogEntry,
   ServerPacket,
   ViewState,
 } from '@love-letter/core';
@@ -34,12 +35,25 @@ export interface GameState {
   lastEventId: number;
   /** Room chat, rendered by the Game screen (ticket 06). */
   chat: ChatMessage[];
+  /** Seats whose sockets are currently dropped — the away badges (issue 11). */
+  away: string[];
+  /** Room-layer status lines (disconnects/reconnects), shown with the log. */
+  activity: LogEntry[];
+  activitySeq: number;
+  /** Set when the server tears the room down under us (issue 11). */
+  roomClosed: string | null;
+  /** True after an intentional leave; the tab is back on Home with a fresh socket. */
+  left: boolean;
+  /** Re-keys the socket effect so a leave/reset opens a fresh connection. */
+  session: number;
 }
 
 type Action =
   | { type: 'status'; status: ConnStatus }
   | { type: 'packet'; packet: ServerPacket }
-  | { type: 'clearError' };
+  | { type: 'clearError' }
+  | { type: 'left' }
+  | { type: 'reset' };
 
 const STORAGE_KEY = 'love-letter-player-id';
 
@@ -49,16 +63,23 @@ function reducer(state: GameState, action: Action): GameState {
       return { ...state, status: action.status };
     case 'clearError':
       return { ...state, error: null };
+    case 'left':
+      // Intentional exit: identity cleared by the caller, view dropped, and a
+      // fresh socket opens (session++). Home renders while it connects.
+      return { ...initial, left: true, status: 'open', session: state.session + 1 };
+    case 'reset':
+      // Back to Home (e.g. after a roomClosed): fresh state, fresh socket.
+      return { ...initial, session: state.session + 1 };
     case 'packet': {
       const p = action.packet;
       switch (p.type) {
         case 'hello':
-          return { ...state, selfId: p.playerId, error: null };
+          return { ...state, selfId: p.playerId, left: false, away: [], activity: [], activitySeq: 0, error: null };
         case 'snapshot':
           // A fresh client starts from the snapshot; a resuming client that
           // kept its view folds the replayed events onto it instead.
           return state.view === null
-            ? { ...state, view: p.view, lastEventId: p.lastEventId, error: null }
+            ? { ...state, view: p.view, lastEventId: p.lastEventId, away: p.away, error: null }
             : state;
         case 'event':
           return state.view !== null && state.selfId !== null && p.id > state.lastEventId
@@ -72,6 +93,27 @@ function reducer(state: GameState, action: Action): GameState {
           return { ...state, chat: [...state.chat, p.message] };
         case 'chatLog':
           return { ...state, chat: [...p.messages] };
+        case 'playerGone': {
+          const line: LogEntry = { id: state.activitySeq, kind: 'info', text: `${p.name} disconnected — seat held` };
+          return {
+            ...state,
+            away: state.away.includes(p.playerId) ? state.away : [...state.away, p.playerId],
+            activity: [...state.activity, line].slice(-50),
+            activitySeq: state.activitySeq + 1,
+          };
+        }
+        case 'playerBack': {
+          const line: LogEntry = { id: state.activitySeq, kind: 'info', text: `${p.name} reconnected` };
+          return {
+            ...state,
+            away: state.away.filter((id) => id !== p.playerId),
+            activity: [...state.activity, line].slice(-50),
+            activitySeq: state.activitySeq + 1,
+          };
+        }
+        case 'roomClosed':
+          // The room is dead — nothing to resume into.
+          return { ...state, roomClosed: p.reason };
         case 'error':
           return { ...state, error: p.message };
       }
@@ -79,17 +121,35 @@ function reducer(state: GameState, action: Action): GameState {
   }
 }
 
-const initial: GameState = { status: 'connecting', selfId: null, view: null, error: null, lastEventId: -1, chat: [] };
+const initial: GameState = {
+  status: 'connecting',
+  selfId: null,
+  view: null,
+  error: null,
+  lastEventId: -1,
+  chat: [],
+  away: [],
+  activity: [],
+  activitySeq: 0,
+  roomClosed: null,
+  left: false,
+  session: 0,
+};
 
 export function useGame() {
   const [state, dispatch] = useReducer(reducer, initial);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // A new session (leave / reset) closes the old socket and opens a fresh
+  // one; the `alive` guard stops the dying socket's handlers from clobbering
+  // the new connection's status.
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
     wsRef.current = ws;
+    let alive = true;
     ws.onopen = () => {
+      if (!alive) return;
       dispatch({ type: 'status', status: 'open' });
       // Rejoin the seat this tab held before the refresh (if any).
       const stored = sessionStorage.getItem(STORAGE_KEY);
@@ -97,8 +157,8 @@ export function useGame() {
         ws.send(JSON.stringify({ type: 'resume', playerId: stored, lastEventId: -1 } satisfies ClientPacket));
       }
     };
-    ws.onclose = () => dispatch({ type: 'status', status: 'closed' });
-    ws.onerror = () => dispatch({ type: 'status', status: 'closed' });
+    ws.onclose = () => { if (alive) dispatch({ type: 'status', status: 'closed' }); };
+    ws.onerror = () => { if (alive) dispatch({ type: 'status', status: 'closed' }); };
     ws.onmessage = (event) => {
       try {
         dispatch({ type: 'packet', packet: JSON.parse(String(event.data)) as ServerPacket });
@@ -106,8 +166,11 @@ export function useGame() {
         // ignore malformed frames; the server's errors are the source of truth
       }
     };
-    return () => ws.close();
-  }, []);
+    return () => {
+      alive = false;
+      ws.close();
+    };
+  }, [state.session]);
 
   // Keep the seat id across refreshes so resume can find it.
   useEffect(() => {
@@ -119,6 +182,11 @@ export function useGame() {
   useEffect(() => {
     if (state.error !== null && state.view === null) sessionStorage.removeItem(STORAGE_KEY);
   }, [state.error, state.view]);
+
+  // A roomClosed means the room is gone — its seat can never be resumed.
+  useEffect(() => {
+    if (state.roomClosed !== null) sessionStorage.removeItem(STORAGE_KEY);
+  }, [state.roomClosed]);
 
   const send = useCallback((packet: ClientPacket) => {
     const ws = wsRef.current;
@@ -142,6 +210,16 @@ export function useGame() {
   const sendChat = useCallback((text: string) => {
     send({ type: 'chat', text });
   }, [send]);
+  /** Leave for good (issue 11): tell the server, forget the identity, and
+   *  open a fresh socket so Home works without a page reload. Fire-and-forget:
+   *  leaving is always legal, so there is nothing to wait for. */
+  const sendLeave = useCallback(() => {
+    send({ type: 'leave' });
+    sessionStorage.removeItem(STORAGE_KEY);
+    dispatch({ type: 'left' });
+  }, [send]);
+  /** Back to Home after the room died under us (roomClosed). */
+  const goHome = useCallback(() => dispatch({ type: 'reset' }), []);
   const clearError = useCallback(() => dispatch({ type: 'clearError' }), []);
 
   return {
@@ -153,6 +231,8 @@ export function useGame() {
     sendNextRound,
     sendRematch,
     sendChat,
+    sendLeave,
+    goHome,
     clearError,
   };
 }

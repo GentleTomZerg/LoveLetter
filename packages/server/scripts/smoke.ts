@@ -5,7 +5,9 @@
  * resume/replay after a mid-round disconnect (both the fresh-snapshot and the
  * keep-your-view replay paths, with privacy on replayed events), grace + auto-
  * fold of a dropped turn owner, chat relay, duplicate-socket replacement, and
- * room expiry.
+ * room expiry. Issue 11 adds: intentional leave (lobby + mid-round), drop
+ * visibility (playerGone/playerBack + away on snapshots), and the no-show
+ * vacate at the next safe point (3p continues, 2p closes).
  *
  * Run: npm run smoke --workspace @love-letter/server
  */
@@ -226,6 +228,27 @@ async function openRoom(port: number, capacity: 2 | 3 | 4, nameA = 'Alice', name
   return { alice, bob, roomCode: hello.roomCode };
 }
 
+/** Open a 3-player room and fill it; the match auto-starts at the third seat. */
+async function openRoom3(port: number): Promise<{ alice: TestClient; bob: TestClient; carol: TestClient; roomCode: string }> {
+  const alice = await connect(port);
+  alice.send({ type: 'createRoom', name: 'Alice', capacity: 3 });
+  const hello = await alice.waitFor((p) => p.type === 'hello');
+  assert.equal(hello.type, 'hello');
+  await alice.waitFor((p) => p.type === 'snapshot');
+
+  const bob = await connect(port);
+  bob.send({ type: 'joinRoom', roomCode: hello.roomCode, name: 'Bob' });
+  await bob.waitFor((p) => p.type === 'snapshot');
+
+  const carol = await connect(port);
+  carol.send({ type: 'joinRoom', roomCode: hello.roomCode, name: 'Carol' });
+  await carol.waitFor((p) => p.type === 'snapshot');
+
+  await alice.waitFor((p) => p.type === 'event' && p.event.type === 'roundStarted');
+  await bob.waitFor((p) => p.type === 'event' && p.event.type === 'roundStarted');
+  return { alice, bob, carol, roomCode: hello.roomCode };
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 1 — the existing vertical spine: full match, rematch, error paths
 // ---------------------------------------------------------------------------
@@ -382,7 +405,7 @@ async function runResumeReplay(port: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 3 — grace + auto-fold, seat kept, room expiry
+// Scenario 3 — grace + auto-fold, seat kept within grace, room expiry
 // ---------------------------------------------------------------------------
 
 async function runGraceFold(port: number): Promise<void> {
@@ -399,28 +422,29 @@ async function runGraceFold(port: number): Promise<void> {
   await bob.waitFor((p) => p.type === 'event' && p.event.type === 'roundEnded');
 
   assert.equal(bob.view!.phase, 'roundEnded');
-  const aliceSeat = bob.view!.players.find((p) => p.id === alice.selfId)!;
-  assert.equal(aliceSeat.out, true, 'alice folded out of the round');
-  assert.equal(aliceSeat.tokens, 0, 'folding awards no token');
-  assert.equal(bob.view!.players.find((p) => p.id === bob.selfId)!.tokens, 1, 'bob wins by default');
+  assert.equal(bob.view!.players.find((p) => p.id === alice.selfId)!.out, true, 'alice folded out of the round');
+  assert.equal(bob.view!.players.find((p) => p.id === alice.selfId)!.tokens, 0, 'folding awards no token');
+  assert.equal(bob.view!.players.find((p) => p.id === bob.selfId)!.tokens, 1, 'bob wins the round by default');
 
-  // Alice's seat is kept: next round still seats her.
-  bob.send({ type: 'nextRound' });
-  await bob.waitFor((p) => p.type === 'event' && p.event.type === 'roundStarted');
-  assert.equal(bob.view!.roundNumber, 2);
-  assert.equal(bob.view!.players.map((p) => p.id).length, 2, 'seat kept for the next round');
-  assert.equal(bob.view!.players.find((p) => p.id === alice.selfId)!.out, false);
+  // Her grace had fully expired by the round end: the issue 11 no-show rule
+  // vacates the seat, and a 2-player room cannot continue — the remaining
+  // player gets a roomClosed notice and the room is torn down.
+  const closed = await bob.waitFor((p) => p.type === 'roomClosed', 3000);
+  assert.equal(closed.type, 'roomClosed');
+  assert.match(closed.reason, /didn't return/);
+  await once(bob.ws, 'close'); // deleteRoom closes the remaining socket
 
-  // A folded player can resume: same seat, current state.
-  const aliceBack = await alice.resume(false);
-  await aliceBack.waitFor((p) => p.type === 'chatLog');
-  assert.equal(aliceBack.view!.phase, 'round');
-  assert.equal(aliceBack.view!.roundNumber, 2);
-  assert.equal(aliceBack.view!.players.find((p) => p.id === alice.selfId)!.out, false);
-  assertNoErrors(aliceBack, bob);
-
-  aliceBack.close();
-  bob.close();
+  // --- a seat held within grace still resumes (Q12 unchanged) --------------
+  const { alice: a2, bob: b2 } = await openRoom(port, 2);
+  a2.close();
+  const a2Back = await a2.resume(false); // well within the 150ms grace
+  await a2Back.waitFor((p) => p.type === 'chatLog');
+  assertNoErrors(a2Back, b2);
+  assert.equal(a2Back.view!.players.length, 2, 'a within-grace seat is kept for the resume');
+  assert.equal(a2Back.view!.phase, 'round');
+  assert.equal(a2Back.view!.players.find((p) => p.id === a2.selfId)!.out, false);
+  a2Back.close();
+  b2.close();
 
   // --- an abandoned room is reclaimed after a grace window -----------------
   const c1 = await connect(port);
@@ -441,6 +465,153 @@ async function runGraceFold(port: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 4 — leave, drop visibility, and the no-show vacate (issue 11)
+// ---------------------------------------------------------------------------
+
+async function runLeaveAndVisibility(port: number): Promise<void> {
+  // --- lobby leave frees the seat, and the old identity is dead ------------
+  const a = await connect(port);
+  a.send({ type: 'createRoom', name: 'Alice', capacity: 3 });
+  const hello = await a.waitFor((p) => p.type === 'hello');
+  const b = await connect(port);
+  b.send({ type: 'joinRoom', roomCode: hello.roomCode, name: 'Bob' });
+  await b.waitFor((p) => p.type === 'snapshot');
+
+  a.send({ type: 'leave' });
+  await b.waitFor((p) => p.type === 'event' && p.event.type === 'playerLeft');
+  assert.equal(b.view!.players.length, 1, 'the lobby seat is freed');
+  await once(a.ws, 'close'); // the server closes the leaver's socket
+
+  // A new player can take the freed seat; the leaver's id never resumes.
+  const c = await connect(port);
+  c.send({ type: 'joinRoom', roomCode: hello.roomCode, name: 'Carol' });
+  await c.waitFor((p) => p.type === 'snapshot');
+  assert.equal(c.view!.players.map((p) => p.id).length, 2, 'a new player joins the freed seat');
+  const ghost = await connect(port);
+  ghost.send({ type: 'resume', playerId: a.selfId!, lastEventId: 0 });
+  const noSeat = await ghost.waitFor((p) => p.type === 'error');
+  assert.match(noSeat.message, /no seat found/);
+  ghost.close();
+  b.close();
+  c.close();
+
+  // --- mid-round leave in 3 players: hand revealed, seat gone, game on -----
+  const { alice, bob, carol } = await openRoom3(port);
+  assert.equal(alice.view!.currentTurn, alice.selfId, 'first seat holds the turn');
+  alice.send({ type: 'leave' });
+  await bob.waitFor((p) => p.type === 'event' && p.event.type === 'playerLeft' && p.event.playerId === alice.selfId);
+  await carol.waitFor((p) => p.type === 'event' && p.event.type === 'playerLeft' && p.event.playerId === alice.selfId);
+  assert.ok(
+    bob.packets.some((p) => p.type === 'event' && p.event.type === 'handRevealed' && p.event.playerId === alice.selfId),
+    'the leaver’s hand is revealed to the table',
+  );
+  assert.equal(bob.view!.players.length, 2, 'no ghost seat after a leave');
+  assert.equal(carol.view!.players.length, 2);
+  assert.equal(bob.view!.currentTurn, bob.selfId, 'the turn passes to the next seat');
+  await once(alice.ws, 'close');
+
+  // The match continues with two seats — play until the round ends.
+  let guard = 0;
+  while (guard < 500 && bob.view!.phase !== 'roundEnded') {
+    guard += 1;
+    const acted = (await playOneMove(bob)) || (await playOneMove(carol));
+    if (!acted) { await new Promise((r) => setTimeout(r, 10)); continue; }
+    assertNoErrors(bob, carol);
+    assert.equal(bob.view!.players.length, 2, 'seats stay stable');
+  }
+  assert.ok(guard < 500, 'the 2-player match continues after the leave');
+
+  // --- drop visibility: playerGone, away on snapshots, playerBack ----------
+  bob.close();
+  const gone = await carol.waitFor((p) => p.type === 'playerGone' && p.playerId === bob.selfId, 3000);
+  assert.equal(gone.name, 'Bob');
+
+  // A fresh resume of the remaining player's view carries the away set.
+  const carolBack = await carol.resume(false);
+  await carolBack.waitFor((p) => p.type === 'chatLog');
+  const snap = carolBack.packets.find((p): p is Extract<ServerPacket, { type: 'snapshot' }> => p.type === 'snapshot');
+  assert.ok(snap, 'a snapshot exists');
+  assert.ok(snap.away.includes(bob.selfId!), 'the away set includes the dropped player');
+
+  // Bob returns: everyone is told, and the badge clears.
+  const bobBack = await bob.resume(false);
+  await bobBack.waitFor((p) => p.type === 'chatLog');
+  const back = await carolBack.waitFor((p) => p.type === 'playerBack' && p.playerId === bob.selfId, 3000);
+  assert.equal(back.name, 'Bob');
+  assertNoErrors(bobBack, carolBack);
+
+  bobBack.close();
+  carolBack.close();
+
+  // --- 2-player button leave: match over for the remaining player ---------
+  const { alice: a2, bob: b2 } = await openRoom(port, 2);
+  assert.equal(a2.view!.currentTurn, a2.selfId);
+  a2.send({ type: 'leave' });
+  const closed2 = await b2.waitFor((p) => p.type === 'roomClosed', 3000);
+  assert.equal(closed2.type, 'roomClosed');
+  assert.match(closed2.reason, /left the game/);
+  await once(b2.ws, 'close'); // the server tears the room down
+  const ghost2 = await connect(port);
+  ghost2.send({ type: 'resume', playerId: a2.selfId!, lastEventId: 0 });
+  const err2 = await ghost2.waitFor((p) => p.type === 'error');
+  assert.match(err2.message, /no seat found/);
+  ghost2.close();
+  b2.close();
+}
+
+async function runNoShowVacate(port: number): Promise<void> {
+  const { alice, bob, carol } = await openRoom3(port);
+
+  // Carol drops; when her turn comes the grace window (150ms) folds her, the
+  // round ends, and the sweep vacates her seat at the round end (issue 11).
+  // The other two keep playing so the turn actually reaches her.
+  carol.close();
+  let guard = 0;
+  while (guard < 200
+    && !bob.packets.some((p) => p.type === 'event' && p.event.type === 'playerEliminated' && p.event.playerId === carol.selfId && p.event.reason === 'fold')) {
+    guard += 1;
+    const acted = (await playOneMove(alice)) || (await playOneMove(bob));
+    if (!acted) { await new Promise((r) => setTimeout(r, 10)); continue; }
+    assertNoErrors(alice, bob);
+  }
+  assert.ok(guard < 200, 'carol was folded at her turn');
+
+  // The sweep fires at the next round end (folding leaves two players
+  // in-round, so the round plays out first). playOneMove auto-advances past
+  // roundEnded, so drive until the playerLeft actually arrives.
+  guard = 0;
+  while (guard < 500
+    && !bob.packets.some((p) => p.type === 'event' && p.event.type === 'playerLeft' && p.event.playerId === carol.selfId)) {
+    guard += 1;
+    const acted = (await playOneMove(alice)) || (await playOneMove(bob));
+    if (!acted) { await new Promise((r) => setTimeout(r, 10)); continue; }
+    assertNoErrors(alice, bob);
+  }
+  assert.ok(guard < 500, 'the no-show seat was vacated at a round end');
+  assert.equal(bob.view!.players.length, 2, 'the no-show seat is vacated');
+  assert.ok(!bob.view!.players.some((p) => p.id === carol.selfId), 'the vacated seat is gone for good');
+
+  // The match continues with two seats — if the driver already advanced into
+  // the next round, there is nothing to do.
+  if (bob.view!.phase === 'roundEnded') {
+    const nextRoundNum = bob.view!.roundNumber + 1;
+    bob.send({ type: 'nextRound' });
+    await bob.waitFor((p) => p.type === 'event' && p.event.type === 'roundStarted' && p.event.roundNumber === nextRoundNum, 3000);
+  }
+  assert.ok(bob.view!.roundNumber >= 2, `the match reached round ${bob.view!.roundNumber}`);
+  assert.equal(bob.view!.players.length, 2, 'round 2 seats only the players who are here');
+  assert.ok(!bob.view!.players.some((p) => p.id === carol.selfId), 'the vacated seat stays gone');
+
+  // The vacated seat is no longer resumable.
+  const ghost = await carol.resume(false);
+  const err = await ghost.waitFor((p) => p.type === 'error', 3000);
+  assert.match(err.message, /no seat found/);
+  ghost.close();
+  alice.close();
+  bob.close();
+}
+
+// ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
   const apps: Awaited<ReturnType<typeof createApp>>[] = [];
@@ -455,14 +626,25 @@ async function main(): Promise<void> {
     apps.push(replayApp);
     await runResumeReplay(replayApp.port);
 
-    console.log('[smoke] grace/auto-fold, seat kept, room expiry…');
+    console.log('[smoke] grace/auto-fold, seat kept within grace, room expiry…');
     const foldApp = await createApp({ port: 0, staticRoot: null, graceMs: 150 });
     apps.push(foldApp);
     await runGraceFold(foldApp.port);
 
+    console.log('[smoke] leave, drop visibility, no-show vacate…');
+    const leaveApp = await createApp({ port: 0, staticRoot: null });
+    apps.push(leaveApp);
+    await runLeaveAndVisibility(leaveApp.port);
+
+    console.log('[smoke] no-show seat vacated at the next safe point…');
+    const noShowApp = await createApp({ port: 0, staticRoot: null, graceMs: 150 });
+    apps.push(noShowApp);
+    await runNoShowVacate(noShowApp.port);
+
     console.log(
       'SMOKE OK — full match, rematch, error paths, resume/replay (stale + fresh), '
-      + 'grace/auto-fold with seat kept, duplicate-socket replacement, chat relay, room expiry',
+      + 'grace/auto-fold with within-grace resume, duplicate-socket replacement, chat relay, room expiry, '
+      + 'leave (lobby + mid-round), drop visibility (playerGone/playerBack + away), no-show vacate, 2p teardown',
     );
   } finally {
     for (const app of apps) await app.close();

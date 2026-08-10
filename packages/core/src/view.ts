@@ -21,7 +21,7 @@ export interface PlayerView {
   handCount: number;
 }
 
-export type LogKind = 'play' | 'fizzle' | 'choice' | 'peek' | 'discard' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'info';
+export type LogKind = 'play' | 'fizzle' | 'choice' | 'peek' | 'discard' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'leave' | 'info';
 
 export interface LogEntry {
   id: number;
@@ -281,6 +281,16 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       log('eliminate', event.reason === 'fold'
         ? `${name(event.playerId)} folded (disconnected)`
         : `${name(event.playerId)} is out`);
+      break;
+
+    case 'playerLeft':
+      // The seat is gone for good (issue 11) — its row leaves the table.
+      // The event carries the name: the row is removed, so the usual lookup
+      // would find nothing. If the leaver holds the turn, the engine's follow-
+      // up events (turnStarted or roundEnded) fix the view in the same batch.
+      v.players = v.players.filter((p) => p.id !== event.playerId);
+      v.roundWinnerIds = v.roundWinnerIds.filter((id) => id !== event.playerId);
+      log('leave', `${event.name} left the game`);
       break;
 
     case 'roundEnded':

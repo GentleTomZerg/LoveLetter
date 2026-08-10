@@ -11,6 +11,22 @@ import { Game } from './screens/Game';
 export function App() {
   const game = useGame();
 
+  if (game.left) {
+    // Intentionally left: Home, with the fresh socket still connecting.
+    return <Home game={game} />;
+  }
+
+  if (game.roomClosed !== null) {
+    return (
+      <div className="screen">
+        <div className="panel room-closed">
+          <p>{game.roomClosed}</p>
+          <button onClick={game.goHome}>Back to Home</button>
+        </div>
+      </div>
+    );
+  }
+
   if (game.status === 'connecting') {
     return (
       <div className="screen">
@@ -39,7 +55,7 @@ export function App() {
         </div>
       )}
       {game.view.phase === 'lobby' ? (
-        <Lobby view={game.view} selfId={game.selfId!} />
+        <Lobby view={game.view} selfId={game.selfId!} away={game.away} onLeave={game.sendLeave} />
       ) : (
         <Game view={game.view} selfId={game.selfId!} game={game} />
       )}

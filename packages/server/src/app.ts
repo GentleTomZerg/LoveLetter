@@ -36,6 +36,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import {
   apply,
   buildView,
+  type ApplyResult,
   type ChatMessage,
   type ClientPacket,
   type Event,
@@ -146,6 +147,8 @@ export async function createApp(options: AppOptions = {}): Promise<AppHandle> {
       // already deleted (expired) is left alone; its teardown owns the rest.
       if (!ctx.rooms.has(room.code) || room.sockets.get(playerId) !== socket) return;
       markSeatGone(ctx, room, playerId);
+      // The table must see the drop, not just the eventual fold (issue 11).
+      announceGone(ctx, room, playerId);
     });
   });
 
@@ -186,6 +189,7 @@ function handlePacket(ctx: ServerContext, conn: Connection, packet: ClientPacket
     case 'nextRound':
     case 'rematch':
       return handleGameIntent(ctx, conn, packet, socket);
+    case 'leave': return handleLeave(ctx, conn, packet, socket);
     case 'resume': return handleResume(ctx, conn, packet, socket);
     case 'chat': return handleChat(conn, packet, socket);
     default:
@@ -269,14 +273,64 @@ function handleGameIntent(ctx: ServerContext, conn: Connection, packet: ClientPa
   const intent = toIntent(packet, conn.playerId);
   if (intent === null) return sendError(socket, 'invalid packet');
 
-  const result = apply(room.state, intent);
-  if (!result.ok) return sendError(socket, result.error);
+  const result = applyIntentAndBroadcast(ctx, room, intent);
+  if (!result.ok) sendError(socket, result.error);
+}
 
+/**
+ * Apply an engine intent, append its events to the log, and broadcast them
+ * privacy-filtered. A round that just ended is the safe point for the issue
+ * 11 no-show sweep: seats whose owners are still gone past their grace
+ * window are vacated (or, at two seats, the room is closed). Then the fold
+ * timer is re-aimed at the next turn owner, who may be gone too.
+ */
+function applyIntentAndBroadcast(ctx: ServerContext, room: Room, intent: Intent): ApplyResult {
+  const result = apply(room.state, intent);
+  if (!result.ok) return result;
   room.state = result.state;
   room.log.push(...result.events);
   broadcast(room, result.events);
-  // A gone player may now hold the turn — start (or extend) their fold timer.
+  if (result.events.some((e) => e.type === 'roundEnded')) vacateNoShows(ctx, room);
   scheduleGraceCheck(ctx, room);
+  return result;
+}
+
+/**
+ * Intentional leave (issue 11): unbind the socket before doing anything else,
+ * so its close handler starts no grace window and announces no playerGone —
+ * the leave packet is how intent is told apart from an accident. The engine
+ * removes the seat (lobby or 3–4 player match); a room that would drop below
+ * two seats cannot continue and is torn down with a `roomClosed` notice.
+ */
+function handleLeave(ctx: ServerContext, conn: Connection, _packet: Extract<ClientPacket, { type: 'leave' }>, socket: WebSocket): void {
+  if (conn.room === null || conn.playerId === null) return sendError(socket, 'you are not in a room');
+  const room = conn.room;
+  const playerId = conn.playerId;
+  const name = room.state?.players.find((p) => p.id === playerId)?.name ?? playerId;
+
+  if (room.state !== null && room.state.phase !== 'lobby' && room.state.players.length <= 2) {
+    conn.room = null;
+    conn.playerId = null;
+    closeRoom(ctx, room, `${name} left the game — match over`);
+    return;
+  }
+
+  if (!applyIntentAndBroadcast(ctx, room, { type: 'leave', playerId }).ok) {
+    sendError(socket, 'you cannot leave this room');
+    return;
+  }
+
+  // The seat is gone for good: unbind before closing the socket.
+  room.sockets.delete(playerId);
+  room.gone.delete(playerId);
+  ctx.playerRooms.delete(playerId);
+  conn.room = null;
+  conn.playerId = null;
+  socket.close();
+
+  if (room.state !== null && room.state.players.length === 0) {
+    deleteRoom(ctx, room.code); // the last player left the lobby
+  }
 }
 
 /**
@@ -312,9 +366,13 @@ function handleResume(ctx: ServerContext, conn: Connection, packet: Extract<Clie
   conn.room = room;
   conn.playerId = playerId;
 
-  // The seat is back: cancel the fold and the room's expiry.
+  // The seat is back: cancel the fold and the room's expiry. Only announce
+  // the return if the seat was actually marked gone — a resume that merely
+  // replaces a stale but connected socket must not cry "reconnected".
+  const wasGone = room.gone.has(playerId);
   room.gone.delete(playerId);
   cancelRoomExpiry(room);
+  if (wasGone) announceBack(ctx, room, playerId);
 
   sendJson(socket, { type: 'hello', playerId, roomCode: room.code });
   sendSnapshot(socket, room, playerId);
@@ -368,6 +426,23 @@ function markSeatGone(ctx: ServerContext, room: Room, playerId: string): void {
   if (room.sockets.size === 0) scheduleRoomExpiry(ctx, room);
 }
 
+/** Tell the table a seat dropped (issue 11) — the away badge's live half. */
+function announceGone(ctx: ServerContext, room: Room, playerId: string): void {
+  const name = room.state?.players.find((p) => p.id === playerId)?.name ?? playerId;
+  for (const [, ws] of room.sockets) {
+    if (ws.readyState === WebSocket.OPEN) sendJson(ws, { type: 'playerGone', playerId, name });
+  }
+}
+
+/** Tell the table a dropped seat is back (issue 11) — excluding its own socket. */
+function announceBack(ctx: ServerContext, room: Room, playerId: string): void {
+  const name = room.state?.players.find((p) => p.id === playerId)?.name ?? playerId;
+  for (const [id, ws] of room.sockets) {
+    if (id === playerId) continue;
+    if (ws.readyState === WebSocket.OPEN) sendJson(ws, { type: 'playerBack', playerId, name });
+  }
+}
+
 /**
  * Ensure the room is watching its current turn owner: if they are a dropped
  * player inside their grace window, schedule the fold for when the window
@@ -399,18 +474,38 @@ function foldGoneTurnOwner(ctx: ServerContext, room: Room): void {
   // Back within the window, or no longer their turn: nothing to do.
   if (deadline === undefined || deadline > Date.now()) return;
 
-  const result = apply(room.state, { type: 'fold', playerId: turnId });
+  const result = applyIntentAndBroadcast(ctx, room, { type: 'fold', playerId: turnId });
   if (!result.ok) {
     // The engine refuses to fold the last in-round player — the round cannot
     // progress while they are gone, so give them one more grace window to
     // return (a resume cancels the expiry) and reclaim the room otherwise.
     scheduleRoomExpiry(ctx, room);
-    return;
   }
-  room.state = result.state;
-  room.log.push(...result.events);
-  broadcast(room, result.events);
-  scheduleGraceCheck(ctx, room); // the next turn owner may be gone too
+}
+
+/**
+ * The no-show rule (issue 11): once grace has expired and the owner still
+ * hasn't returned, the seat is vacated at the next safe point — the end of
+ * the current round — using the same engine `leave` as the button. A room
+ * that would drop below two seats cannot continue: the remaining player
+ * gets a `roomClosed` notice and the room is reclaimed.
+ */
+function vacateNoShows(ctx: ServerContext, room: Room): void {
+  if (room.state === null || room.state.phase === 'lobby') return;
+  const now = Date.now();
+  for (const playerId of [...room.gone.keys()]) {
+    const deadline = room.gone.get(playerId);
+    if (deadline === undefined || deadline > now) continue;
+    if (!room.state.players.some((p) => p.id === playerId)) continue; // already gone
+    if (room.state.players.length <= 2) {
+      const name = room.state.players.find((p) => p.id === playerId)?.name ?? playerId;
+      closeRoom(ctx, room, `${name} didn't return — the match is over`);
+      return;
+    }
+    if (applyIntentAndBroadcast(ctx, room, { type: 'leave', playerId }).ok) {
+      room.gone.delete(playerId);
+    }
+  }
 }
 
 /** Reclaim the room after one more grace window: the last socket left, or the
@@ -422,6 +517,15 @@ function scheduleRoomExpiry(ctx: ServerContext, room: Room): void {
     deleteRoom(ctx, room.code);
   }, ctx.graceMs);
   room.expiryTimer.unref();
+}
+
+/** Issue 11: a room that can no longer sustain a match gets a terminal notice
+ *  on every open socket, then is torn down (which closes those sockets). */
+function closeRoom(ctx: ServerContext, room: Room, reason: string): void {
+  for (const [, ws] of room.sockets) {
+    if (ws.readyState === WebSocket.OPEN) sendJson(ws, { type: 'roomClosed', reason });
+  }
+  deleteRoom(ctx, room.code);
 }
 
 function cancelRoomExpiry(room: Room): void {
@@ -479,12 +583,14 @@ function broadcast(room: Room, events: Event[], opts: { except?: string } = {}):
   });
 }
 
-/** The current view plus the log id it covers (caller guarantees a state). */
+/** The current view plus the log id it covers, and who is currently away
+ *  (grace-held dropped seats) — the snapshot's half of the away state. */
 function sendSnapshot(socket: WebSocket, room: Room, playerId: string): void {
   sendJson(socket, {
     type: 'snapshot',
     view: buildView(room.state!, playerId),
     lastEventId: room.log.length - 1,
+    away: [...room.gone.keys()],
   });
 }
 

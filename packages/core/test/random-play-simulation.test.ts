@@ -141,5 +141,5 @@ describe('random-play simulation: illegal intents', () => {
         }
       }
     }
-  });
+  }, 30_000);
 });

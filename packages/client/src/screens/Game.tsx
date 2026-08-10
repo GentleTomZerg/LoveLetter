@@ -9,17 +9,24 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
   const canPlay = view.phase === 'round' && myTurn && view.pendingChoice === null;
   const myChoice = view.pendingChoice !== null && view.pendingChoice.playerId === selfId;
 
+  const leave = () => {
+    if (window.confirm('Leave the game? Your seat will be freed immediately.')) game.sendLeave();
+  };
+
   return (
     <div className="screen game">
       <header className="game-header">
         <span>Room {view.roomCode}</span>
         <span>Round {view.roundNumber}</span>
         <span>Deck: {view.deckCount}</span>
+        <button className="leave-button" onClick={leave}>
+          Leave game
+        </button>
       </header>
 
       <div className="game-layout">
         <main className="game-main">
-          <TablePanel view={view} selfId={selfId} />
+          <TablePanel view={view} selfId={selfId} away={game.away} />
 
           <div className="table">
             {myTurn && view.phase === 'round' && !myChoice && (
@@ -80,7 +87,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
 
           <Abilities />
 
-          <Log log={view.log} />
+          <Log log={view.log} activity={game.activity} />
 
           {me && me.protected && <p className="badge protected-badge">You are protected by the Handmaid</p>}
         </main>
@@ -134,7 +141,7 @@ function CardView({ card, playable, onClick }: { card: Card; playable: boolean; 
  * material of deduction) and how many cards they still hold (face-down backs
  * plus an explicit count). The panel always renders so the layout is stable.
  */
-function TablePanel({ view, selfId }: { view: ViewState; selfId: string }) {
+function TablePanel({ view, selfId, away }: { view: ViewState; selfId: string; away: string[] }) {
   return (
     <div className="panel scoreboard">
       <p className="panel-title">Table</p>
@@ -151,6 +158,7 @@ function TablePanel({ view, selfId }: { view: ViewState; selfId: string }) {
             {isTurn && <span className="turn-badge">turn</span>}
             {p.protected && <span className="badge">protected</span>}
             {p.out && <span className="badge out-badge">out</span>}
+            {away.includes(p.id) && <span className="badge away-badge">reconnecting…</span>}
             {p.discardPile.length === 0 ? (
               <span className="muted pile-empty">—</span>
             ) : (
@@ -335,11 +343,18 @@ function ChoicePanel({
   );
 }
 
-function Log({ log }: { log: LogEntry[] }) {
+function Log({ log, activity }: { log: LogEntry[]; activity: LogEntry[] }) {
+  // Room-layer status lines (disconnects/reconnects, issue 11) ride along
+  // with the event log. The two sequences use separate id counters, so the
+  // keys are prefixed to stay unique and stable across inserts.
+  const all = [
+    ...log.map((e) => ({ ...e, key: `v${e.id}` })),
+    ...activity.map((e) => ({ ...e, key: `a${e.id}` })),
+  ];
   return (
     <ul className="log">
-      {[...log].reverse().map((entry) => (
-        <li key={entry.id} className={`log-${entry.kind}`}>
+      {[...all].reverse().map((entry) => (
+        <li key={entry.key} className={`log-${entry.kind}`}>
           {entry.text}
         </li>
       ))}

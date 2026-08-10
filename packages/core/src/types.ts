@@ -105,7 +105,8 @@ export interface GameState {
  * the create/join packets; the server stamps playerId from the socket — the
  * client is never trusted to name itself. `fold` is a system-level intent the
  * server issues on behalf of a dropped socket whose grace window expired
- * (ticket 05) — same validation, different sender.
+ * (ticket 05) — same validation, different sender. `leave` is the player's
+ * deliberate exit (issue 11): the seat is removed for good, unlike a fold.
  */
 export type Intent =
   | { type: 'createRoom'; roomCode: string; capacity: 2 | 3 | 4; playerId: string; playerName: string; tokenTarget?: number }
@@ -114,7 +115,8 @@ export type Intent =
   | { type: 'choice'; playerId: string; choice: Choice }
   | { type: 'nextRound'; playerId: string }
   | { type: 'rematch'; playerId: string }
-  | { type: 'fold'; playerId: string };
+  | { type: 'fold'; playerId: string }
+  | { type: 'leave'; playerId: string };
 
 /**
  * An immutable, ordered record of a state transition, appended to the event
@@ -148,6 +150,7 @@ export type Event =
   | { type: 'cardDiscarded'; playerId: string; card: Card; reason: 'prince' | 'countess' }
   | { type: 'handRevealed'; playerId: string; card: Card }
   | { type: 'playerEliminated'; playerId: string; reason: EliminationReason }
+  | { type: 'playerLeft'; playerId: string; name: string }
   | { type: 'roundEnded'; winnerIds: string[]; reason: 'last-standing' | 'highest-hand' }
   | { type: 'matchEnded'; winnerId: string };
 

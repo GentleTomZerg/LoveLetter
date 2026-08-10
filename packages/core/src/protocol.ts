@@ -23,6 +23,10 @@ export type ClientPacket =
   | { type: 'choice'; choice: Choice }
   | { type: 'nextRound' }
   | { type: 'rematch' }
+  /** Leave for good (issue 11): the seat is freed immediately and the stored
+   *  identity is cleared client-side, so a refresh never resumes. Unlike a
+   *  socket drop, no grace window starts. */
+  | { type: 'leave' }
   /** Reconnect to the seat the server issued `playerId` for; the server
    *  replays every event after `lastEventId` (the id of the last event the
    *  client applied, −1 if none). The client never names itself on a fresh
@@ -36,13 +40,21 @@ export type ClientPacket =
  * Each event carries its id (its index in the room's authoritative log) so a
  * resuming client can replay from `lastEventId`. `snapshot.lastEventId` is
  * the log id the snapshot covers; events with a higher id fold on top of it.
+ * `snapshot.away` lists the seats whose sockets are currently dropped (in
+ * their grace window) — room-layer state, like chat, so it travels on the
+ * packet rather than the event log. `playerGone`/`playerBack` update that
+ * set live; `roomClosed` is the terminal teardown notice (e.g. the other
+ * player left a 2-player match).
  * `error` rejects an illegal request.
  */
 export type ServerPacket =
   | { type: 'hello'; playerId: string; roomCode: string }
-  | { type: 'snapshot'; view: ViewState; lastEventId: number }
+  | { type: 'snapshot'; view: ViewState; lastEventId: number; away: string[] }
   | { type: 'event'; id: number; event: Event }
   | { type: 'chat'; message: ChatMessage }
   /** Recent chat history, sent on resume so a reconnecting player keeps it. */
   | { type: 'chatLog'; messages: ChatMessage[] }
+  | { type: 'playerGone'; playerId: string; name: string }
+  | { type: 'playerBack'; playerId: string; name: string }
+  | { type: 'roomClosed'; reason: string }
   | { type: 'error'; message: string };

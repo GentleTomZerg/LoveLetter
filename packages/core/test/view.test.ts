@@ -218,6 +218,43 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
   });
 });
 
+describe('reduceView: playerLeft (issue 11)', () => {
+  it('removes the leaver’s row and logs the leave', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' }), p('C', { name: 'Carol' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+    view = reduceView(view, { type: 'playerLeft', playerId: 'B', name: 'Bob' }, SELF);
+    expect(view!.players.map((p) => p.id)).toEqual(['A', 'C']);
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'leave', text: 'Bob left the game' });
+  });
+
+  it('stays consistent when the leaver held the turn and the turn passes on', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' }), p('C', { name: 'Carol' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+    view = reduceView(view, { type: 'cardDealt', playerId: 'B', card: card(3) }, SELF);
+    // A leaves on her own turn; the batch resolves the turn before the row
+    // leaves, so the view never points at a removed player.
+    view = reduceView(view, { type: 'handRevealed', playerId: 'A', card: card(1) }, SELF);
+    view = reduceView(view, { type: 'handRevealed', playerId: 'A', card: card(2) }, SELF);
+    view = reduceView(view, { type: 'turnStarted', playerId: 'B' }, SELF);
+    expect(view!.currentTurn).toBe('B');
+    view = reduceView(view, { type: 'cardDrawn', playerId: 'B', card: card(5) }, SELF);
+    expect(view!.players.find((p) => p.id === 'B')!.handCount).toBe(2);
+    view = reduceView(view, { type: 'playerLeft', playerId: 'A', name: 'Alice' }, SELF);
+    expect(view!.currentTurn).toBe('B');
+    expect(view!.players.find((p) => p.id === 'A')).toBeUndefined();
+  });
+
+  it('clears a leaving round winner from the winner list', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' }), p('C', { name: 'Carol' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+    view = reduceView(view, { type: 'roundEnded', winnerIds: ['A'], reason: 'last-standing' }, SELF);
+    expect(view!.roundWinnerIds).toEqual(['A']);
+    view = reduceView(view, { type: 'playerLeft', playerId: 'A', name: 'Alice' }, SELF);
+    expect(view!.roundWinnerIds).toEqual([]);
+    expect(view!.players.map((p) => p.id)).toEqual(['B', 'C']);
+  });
+});
+
 describe('reduceView: public table state from events (replay fidelity)', () => {
   it('a round always starts with one face-down burned card', () => {
     let view: ViewState | null = buildView(makeGame([p('A'), p('B')], { deck: [] }), SELF);

@@ -71,6 +71,7 @@ export function apply(
     case 'nextRound': return nextRound(s, intent, rng);
     case 'rematch': return rematch(s, intent, rng);
     case 'fold': return foldPlayer(s, intent);
+    case 'leave': return leaveRoom(s, intent);
   }
 }
 
@@ -529,6 +530,60 @@ function foldPlayer(s: GameState, intent: Extract<Intent, { type: 'fold' }>): Ap
   }
   eliminate(s, intent.playerId, 'fold', events);
   finishTurn(s, events);
+  return ok(s, events);
+}
+
+/**
+ * Intentional leave (issue 11): the player is gone for good — the seat is
+ * removed, not held. In the lobby the room can refill; mid-match (3+ seats)
+ * the leaver's hand is revealed like any elimination, an open choice of
+ * theirs is abandoned, and the turn passes on (or the round ends) as if the
+ * turn owner had finished. A match that would drop below two seats is
+ * rejected: the server tears the room down with a `roomClosed` message
+ * instead of asking the engine.
+ */
+function leaveRoom(s: GameState, intent: Extract<Intent, { type: 'leave' }>): ApplyResult {
+  const idx = s.players.findIndex((p) => p.id === intent.playerId);
+  if (idx === -1) return err('player is not in this room');
+  const player = s.players[idx]!;
+  const events: Event[] = [];
+
+  if (s.phase === 'lobby') {
+    s.players.splice(idx, 1);
+    events.push({ type: 'playerLeft', playerId: player.id, name: player.name });
+    return ok(s, events);
+  }
+
+  if (s.players.length <= 2) return err('the room cannot continue with one player');
+
+  // An open follow-up choice of theirs is void (same as a fold).
+  if (s.pendingChoice?.playerId === player.id) {
+    s.pendingChoice = null;
+    events.push({ type: 'choiceAbandoned', playerId: player.id });
+  }
+
+  // Reveal the leaver's hand like any elimination; the seat then leaves.
+  const revealed = player.hand;
+  player.hand = [];
+  player.discardPile.push(...revealed);
+  for (const card of revealed) {
+    events.push({ type: 'handRevealed', playerId: player.id, card });
+  }
+
+  // A turn owner who vanishes mid-turn resolves exactly like a fold: the
+  // leaver counts as out, so `finishTurn` ends the round (last-standing or
+  // highest-hand on an empty deck) or passes the turn to the next in-round
+  // seat without breaking seat order.
+  const heldTurn = s.currentTurn === player.id;
+  player.out = true;
+  if (heldTurn) finishTurn(s, events);
+
+  // A round winner who leaves between rounds must not anchor the next
+  // round's first turn (startRound falls back to the first seat).
+  s.roundWinnerIds = s.roundWinnerIds.filter((id) => id !== player.id);
+  s.players.splice(idx, 1);
+  events.push({ type: 'playerLeft', playerId: player.id, name: player.name });
+
   return ok(s, events);
 }
 

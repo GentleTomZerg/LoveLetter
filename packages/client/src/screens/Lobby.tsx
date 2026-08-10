@@ -1,7 +1,21 @@
 import type { ViewState } from '@love-letter/core';
 
-export function Lobby({ view, selfId }: { view: ViewState; selfId: string }) {
+export function Lobby({
+  view,
+  selfId,
+  away,
+  onLeave,
+}: {
+  view: ViewState;
+  selfId: string;
+  away: string[];
+  onLeave: () => void;
+}) {
   const seats = Array.from({ length: view.capacity }, (_, i) => view.players[i]);
+
+  const leave = () => {
+    if (window.confirm('Leave the game? Your seat will be freed immediately.')) onLeave();
+  };
 
   return (
     <div className="screen lobby">
@@ -17,6 +31,7 @@ export function Lobby({ view, selfId }: { view: ViewState; selfId: string }) {
               <>
                 <span className="name">{player.name}</span>
                 {player.id === selfId && <span className="badge">you</span>}
+                {away.includes(player.id) && <span className="badge away-badge">reconnecting…</span>}
               </>
             ) : (
               <span className="name muted">Waiting…</span>
@@ -29,6 +44,10 @@ export function Lobby({ view, selfId }: { view: ViewState; selfId: string }) {
         {view.players.length}/{view.capacity} players seated
         {view.players.length < view.capacity ? ' — waiting for the rest…' : ' — starting!'}
       </p>
+
+      <button className="leave-button" onClick={leave}>
+        Leave game
+      </button>
     </div>
   );
 }
