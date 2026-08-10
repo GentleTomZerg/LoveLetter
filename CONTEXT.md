@@ -42,3 +42,11 @@ The card removed face-down from the deck at setup, unknown to all; used in the a
 
 **PendingChoice**:
 The engine state between the card's play and the resolution of its follow-up effect (Guard: player + card guess; Priest/Baron/Prince/King: target player). The turn is not over until resolved.
+
+**Log entry**:
+A display line derived from the event stream — who played what, who was eliminated, how the round ended — the deduction surface. Structured (a kind plus parameters) so each client renders it in its own language.
+_Avoid_: news, feed, message, update
+
+**Locale**:
+The language a client renders the game in. Every client picks its own (auto-detected, with a manual toggle), so a single room can mix languages.
+_Avoid_: language pack
