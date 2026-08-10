@@ -34,7 +34,7 @@ Primary design record. Source: grilling session (stateless `/grilling` primitive
 | Q17 | Rules rulings | **Adopt all four** (see below) | Matches AEG later editions / Board Game Arena |
 | Q18 | Lobby | Creator picks capacity (2–4), **auto-start when full** | Rooms always support 2 |
 | Q19 | MVP scope | **As proposed** | Lobby → full match → chat → event log → functional UI → engine tests |
-| Q20 | Deploy target | **Local now, revisit later** | Fly.io not a guaranteed free tier → deferred |
+| Q20 | Deploy target | **Local + on-demand tunnel for remote play** | `scripts/play.sh`: free cloudflared quick tunnel (https URL per session, no account) over the local server — matches "open it when a friend wants to play". Always-on hosting (Vercel/Render/Bonto/Fly) deferred: Vercel WS beta caps at 300s & pins connections to one instance; Render/Bonto free tiers sleep on idle; Fly has no free tier |
 | Q21 | Card art | **User-provided PNGs** (rank-keyed in `client/public/cards`) | Replaces the game-icons plan; source/license TBD |
 
 ## Stack
