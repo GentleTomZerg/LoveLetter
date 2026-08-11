@@ -115,6 +115,34 @@ export const en = {
   'log.info.playerGone': '{name} disconnected — seat held',
   'log.info.playerBack': '{name} reconnected',
 
+  // --- Scene verdicts (ticket 23, ADR-0007: scenes are functional
+  // presentation — the animation is the storyteller) ---
+  // The `.self` forms cover the viewer as actor/target (“You are protected”
+  // vs “Alice is protected”, “Your Guard had no target” vs “Alice's…").
+  'scene.guard.accuses': '{actor} accuses {target} of the {card}?',
+  'scene.guard.accuses.self': 'You accuse {target} of the {card}?',
+  'scene.guard.hit': 'Hit! {target} had the {card}',
+  'scene.guard.miss': 'No — {target} didn\'t have the {card}',
+  'scene.baron.vs': "{actor}'s {cardA} vs {target}'s {cardB}",
+  'scene.baron.vs.self': "Your {cardA} vs {target}'s {cardB}",
+  'scene.baron.backfire': "{actor}'s {card} backfires",
+  'scene.baron.backfire.self': 'Your {card} backfires',
+  'scene.baron.tie': "{actor}'s {card} ties {target}",
+  'scene.baron.tie.self': 'Your {card} ties {target}',
+  'scene.king.swapped': 'Hands swapped',
+  'scene.peek.self': "You saw {target}'s {card}",
+  'scene.peek.other': '{actor} peeked at {target}',
+  'scene.handmaid': '{actor} is protected',
+  'scene.handmaid.self': 'You are protected',
+  'scene.prince': '{target} discards the {card}',
+  'scene.prince.self': 'You discard the {card}',
+  'scene.countess': '{actor} discards the {card}',
+  'scene.countess.forced': '{actor} discards the {card} (forced)',
+  'scene.princess': '{actor} is out',
+  'scene.princess.self': 'You are out',
+  'scene.fizzle': "{actor}'s {card} had no target",
+  'scene.fizzle.self': 'Your {card} had no target',
+
   // --- Errors and room teardown (ADR-0005: codes over the wire) ---
   'error.unknown': 'Something went wrong.',
   // protocol errors (server app.ts)
@@ -274,6 +302,32 @@ export const zh: Record<MessageKey, string> = {
   'log.info.choiceAbandoned': '{name} 离开了——其选择被放弃',
   'log.info.playerGone': '{name} 掉线——座位保留',
   'log.info.playerBack': '{name} 重新连接',
+
+  // --- Scene verdicts (ticket 23, ADR-0007) ---
+  // 中文无系动词与所有格，`.self` 与基础键共用同一个模板。
+  'scene.guard.accuses': '{actor} 指控 {target} 持有{card}？',
+  'scene.guard.accuses.self': '你指控 {target} 持有{card}？',
+  'scene.guard.hit': '命中！{target} 持有{card}',
+  'scene.guard.miss': '没有——{target} 没有{card}',
+  'scene.baron.vs': '{actor} 的{cardA} 对 {target} 的{cardB}',
+  'scene.baron.vs.self': '你的{cardA} 对 {target} 的{cardB}',
+  'scene.baron.backfire': '{actor} 的{card} 适得其反',
+  'scene.baron.backfire.self': '你的{card} 适得其反',
+  'scene.baron.tie': '{actor} 的{card}与 {target} 打成平手',
+  'scene.baron.tie.self': '你的{card}与 {target} 打成平手',
+  'scene.king.swapped': '手牌已交换',
+  'scene.peek.self': '你看到了 {target} 的{card}',
+  'scene.peek.other': '{actor} 查看了 {target} 的手牌',
+  'scene.handmaid': '{actor} 受到保护',
+  'scene.handmaid.self': '你受到保护',
+  'scene.prince': '{target} 弃掉了{card}',
+  'scene.prince.self': '你弃掉了{card}',
+  'scene.countess': '{actor} 弃掉了{card}',
+  'scene.countess.forced': '{actor} 弃掉了{card}（强制）',
+  'scene.princess': '{actor} 出局',
+  'scene.princess.self': '你出局',
+  'scene.fizzle': '{actor} 的{card} 没有合法目标',
+  'scene.fizzle.self': '你的{card} 没有合法目标',
 
   // --- Errors and room teardown ---
   'error.unknown': '出了点问题。',

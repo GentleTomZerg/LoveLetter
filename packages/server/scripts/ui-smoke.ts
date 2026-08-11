@@ -7,9 +7,9 @@
  *  - chatPill   chat is a floating pill + modal dialog (ticket 20): newest-
  *               message preview, unread badge that clears on open, close on
  *               send/Esc/outside click, near-fullscreen dialog on phones.
- *  - cardMoments  card-moment animations (ticket 22): a fly/flash/banner
- *               plays as entries land live and drains; prefers-reduced-motion
- *               disables all motion.
+ *  - sceneAnimations  scene-based card animations (ticket 23): a scene plays
+ *               through (the card appears, the verdict caption appears, the
+ *               queue drains); prefers-reduced-motion disables all scenes.
  *  - logStrip   the log is a top bar fixed at the top of the viewport (issue
  *               21) collapsing to a latest-event strip and expanding in place
  *               (ticket 19): the strip shows the newest entry, tracks live
@@ -503,12 +503,13 @@ async function runChatPill(base: string, debugPort: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1d — ticket 22: card-moment animations. A moment element appears
-// as play happens and drains on its own; every animated card stays
-// rank-keyed; under prefers-reduced-motion no moment ever appears.
+// Scenario 1d — ticket 23: scene-based card animations. A scene plays
+// through — the played card appears (Use), the verdict caption appears with
+// the outcome (Effect) — and drains on its own; every animated card stays
+// rank-keyed; under prefers-reduced-motion no scene ever appears.
 // ---------------------------------------------------------------------------
 
-async function runCardMoments(base: string, debugPort: number): Promise<void> {
+async function runSceneAnimations(base: string, debugPort: number): Promise<void> {
   const [tabA, tabB] = await openTabs(debugPort, 2);
   await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
 
@@ -516,15 +517,15 @@ async function runCardMoments(base: string, debugPort: number): Promise<void> {
   // its animation clock runs (headless pages freeze animations while hidden).
   await tabA.bringToFront();
 
-  // Drive play until a moment is caught mid-flight (fly 1.1s / flash 1.2s /
-  // banner 2.2s — long enough for playUntil's per-iteration poll to see one).
+  // The played card appears mid-scene (the fly is ~0.9–1s, long enough for
+  // playUntil's per-iteration poll to see one) and stays rank-keyed.
   await playUntil(
     [tabA, tabB],
-    async () => (await tabA.eval(`document.querySelector('.moments .moment') !== null`)) as boolean,
+    async () => (await tabA.eval(`document.querySelector('.scenes .scene-fly') !== null`)) as boolean,
     600,
   );
   const anySrc = (await tabA.eval(`(() => {
-    const img = document.querySelector('.moments img');
+    const img = document.querySelector('.scenes img');
     return img === null ? null : img.getAttribute('src');
   })()`)) as string | null;
   assert.ok(
@@ -532,10 +533,21 @@ async function runCardMoments(base: string, debugPort: number): Promise<void> {
     `animated cards stay rank-keyed: ${anySrc}`,
   );
 
-  // The queue drains on its own — no input needed to clear it.
-  await waitFor(tabA, `document.querySelectorAll('.moments .moment').length === 0`, 15000, 'moments drain');
+  // The caught scene's effect beat ends with a verdict caption (~1.5s hold)
+  // within a couple of seconds — no further moves are needed; the head scene
+  // reaches it on its own. (Every scene with a fly also has a caption.)
+  await waitFor(
+    tabA,
+    `(document.querySelector('.scene-caption')?.textContent ?? '').trim().length > 0`,
+    10000,
+    'verdict caption appears',
+  );
 
-  // Reduced motion: play more, no moment may ever appear. Progress is
+  // The queue drains on its own — no input needed to clear the head scene
+  // and anything that queued behind it while we played.
+  await waitFor(tabA, `document.querySelectorAll('.scenes .scene').length === 0`, 25000, 'scenes drain');
+
+  // Reduced motion: play more, no scene may ever appear. Progress is
   // measured by the log text growing — any entry means a real play/choice
   // happened, and under reduced motion the top-bar text is the moment
   // carrier (the spec's own framing). Non-empty pile COUNT can't be used:
@@ -546,9 +558,9 @@ async function runCardMoments(base: string, debugPort: number): Promise<void> {
   const logBefore = (await logText(tabA)) as string;
   await playUntil([tabA, tabB], async () => ((await logText(tabA)) as string) !== logBefore, 600);
   assert.equal(
-    await tabA.eval(`document.querySelectorAll('.moments .moment').length`),
+    await tabA.eval(`document.querySelectorAll('.scenes .scene').length`),
     0,
-    'no card moments under prefers-reduced-motion',
+    'no scenes under prefers-reduced-motion',
   );
   await assertNoErrors(tabA, tabB);
 }
@@ -714,8 +726,8 @@ async function main(): Promise<void> {
     await runChatPill(base, debugPort);
     console.log('[ui-smoke] log top bar + expandable strip (tickets 19, 21)…');
     await runLogStrip(base, debugPort);
-    console.log('[ui-smoke] card-moment animations (ticket 22)…');
-    await runCardMoments(base, debugPort);
+    console.log('[ui-smoke] scene-based card animations (ticket 23)…');
+    await runSceneAnimations(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');
     await runFullMatch(base, debugPort);
     console.log('[ui-smoke] 3- and 4-player matches…');

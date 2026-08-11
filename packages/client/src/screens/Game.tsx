@@ -3,7 +3,7 @@ import type { Card, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Ra
 import type { Game } from '../useGame';
 import { useLocale, joinLocalizedList } from '../i18n';
 import { formatLogEntry, entryRank, latestLogEntry, type LogContext } from '../i18n/logFormat';
-import { PlayMoments } from './PlayMoments';
+import { PlayScenes } from './PlayScenes';
 
 export function Game({ view, selfId, game }: { view: ViewState; selfId: string; game: Game }) {
   const { t, cardName } = useLocale();
@@ -100,7 +100,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
         </main>
       </div>
 
-      <PlayMoments log={view.log} selfId={selfId} roster={view.roster} />
+      <PlayScenes log={view.log} selfId={selfId} roster={view.roster} />
 
       <ChatDialog chat={game.chat} selfId={selfId} onSend={game.sendChat} />
     </div>
