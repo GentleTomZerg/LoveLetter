@@ -4,6 +4,9 @@
  *
  *  - render     Home → Lobby → Game, scoreboard, discard piles, chat across
  *               tabs (ticket 06 render claims; screenshots saved for a look).
+ *  - logStrip   the log collapses to a latest-event strip under the table and
+ *               expands in place (ticket 19): the strip shows the newest
+ *               entry, tracks live play, and keeps its thumbnail rank-keyed.
  *  - fullMatch  a complete 2-player match to the 7-token target: all eight
  *               cards appear in the public log, match end, rematch resets.
  *  - multiPlayer 3- and 4-player matches start, play, and end at the right
@@ -302,6 +305,63 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 1b — ticket 19: the log collapses to a latest-event strip under
+// the table and expands in place. The strip shows the newest entry (with a
+// rank-keyed mini thumbnail when it carries a rank) and tracks live play;
+// clicking toggles the full newest-first list with its scroll height kept.
+// ---------------------------------------------------------------------------
+
+async function runLogStrip(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+
+  // Some real play so the log has entries (a play line carries a rank).
+  await playUntil([tabA, tabB], async () => (await nonEmptyPiles(tabA)) >= 2, 600);
+
+  // One atomic snapshot: the strip and the top of the expanded list must show
+  // the same entry, and any thumbnail must stay rank-keyed (never a card name).
+  const snap = (await tabA.eval(`(() => {
+    const strip = document.querySelector('.log-strip-text')?.textContent ?? null;
+    const first = document.querySelector('.log li')?.textContent ?? null;
+    const thumb = document.querySelector('.log-strip img.log-thumb')?.getAttribute('src') ?? null;
+    const open = document.querySelector('.log-panel')?.open ?? null;
+    return { strip, first, thumb, open };
+  })()`)) as { strip: string | null; first: string | null; thumb: string | null; open: boolean | null };
+  assert.ok(snap.strip !== null && snap.strip.length > 0, 'strip shows a latest event');
+  assert.equal(snap.strip, snap.first, 'strip shows the newest entry — the top of the expanded list');
+  assert.equal(snap.open, false, 'log panel starts collapsed');
+  assert.ok(
+    snap.thumb === null || /^\/cards\/[1-8]\.png$/.test(snap.thumb),
+    `strip thumbnail is rank-keyed: ${snap.thumb}`,
+  );
+
+  // Click expands in place (`<details>`, the Abilities pattern): the full
+  // list becomes visible with its scroll height; clicking again collapses.
+  await click(tabA, '.log-strip');
+  await waitFor(tabA, `document.querySelector('.log-panel').open === true`, 5000, 'log panel opens');
+  const visible = (await tabA.eval(`(() => {
+    const el = document.querySelector('.log-panel .log');
+    return el !== null && el.getBoundingClientRect().height > 0;
+  })()`)) as boolean;
+  assert.equal(visible, true, 'expanded log is visible in place');
+  assert.ok(
+    (await tabA.eval(`document.querySelectorAll('.log li').length`)) > 0,
+    'expanded log lists the history',
+  );
+  await click(tabA, '.log-strip');
+  await waitFor(tabA, `document.querySelector('.log-panel').open === false`, 5000, 'log panel collapses');
+
+  // The strip tracks live play: one more move must change the newest entry.
+  const before = (await tabA.eval(`document.querySelector('.log-strip-text')?.textContent ?? null`)) as string | null;
+  await playUntil(
+    [tabA, tabB],
+    async () => (await tabA.eval(`document.querySelector('.log-strip-text')?.textContent ?? null`)) !== before,
+    600,
+  );
+  await assertNoErrors(tabA, tabB);
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 2 — full 2-player match to the 7-token target + rematch
 // ---------------------------------------------------------------------------
 
@@ -447,6 +507,8 @@ async function main(): Promise<void> {
     await runLocaleCheck(base, debugPort);
     console.log('[ui-smoke] render checks (Home → Lobby → Game, discards, chat)…');
     await runRenderChecks(base, debugPort);
+    console.log('[ui-smoke] latest-event strip + expandable log (ticket 19)…');
+    await runLogStrip(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');
     await runFullMatch(base, debugPort);
     console.log('[ui-smoke] 3- and 4-player matches…');

@@ -57,6 +57,7 @@ export const en = {
   'game.rematch': 'Rematch',
   'game.protected': 'You are protected by the Handmaid',
   'game.abilities': 'Card abilities',
+  'game.logEmpty': 'No events yet.',
 
   // --- Table panel ---
   'table.title': 'Table',
@@ -216,6 +217,7 @@ export const zh: Record<MessageKey, string> = {
   'game.rematch': '再来一局',
   'game.protected': '你受到侍女的保护',
   'game.abilities': '卡牌能力',
+  'game.logEmpty': '还没有事件。',
 
   // --- Table panel ---
   'table.title': '牌桌',

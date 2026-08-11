@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Card, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Rank, ViewState } from '@love-letter/core';
 import type { Game } from '../useGame';
 import { useLocale, joinLocalizedList } from '../i18n';
-import { formatLogEntry, type LogContext } from '../i18n/logFormat';
+import { formatLogEntry, entryRank, latestLogEntry, type LogContext } from '../i18n/logFormat';
 
 export function Game({ view, selfId, game }: { view: ViewState; selfId: string; game: Game }) {
   const { t, cardName } = useLocale();
@@ -350,11 +350,14 @@ function ChoicePanel({
 }
 
 /**
- * The event log, newest first. Room-layer status lines (disconnects/
- * reconnects, issue 11) ride along with it. The two sequences use separate
- * id counters, so the keys are prefixed to stay unique and stable across
- * inserts. Entries are structured (ADR-0003); `formatLogEntry` renders them
- * in the viewer's locale.
+ * The event log (issue 19), collapsed to a single latest-event strip under
+ * the table: the newest entry rendered with a mini card thumbnail when it
+ * carries a rank, expanding in place (`<details>`, the Abilities pattern) to
+ * the full newest-first history with the scroll height kept. Room-layer
+ * status lines (disconnects/reconnects, issue 11) ride along with it. The
+ * two sequences use separate id counters, so the keys are prefixed to stay
+ * unique and stable across inserts. Entries are structured (ADR-0003);
+ * `formatLogEntry` renders them in the viewer's locale.
  */
 function Log({
   log,
@@ -373,13 +376,23 @@ function Log({
     ...log.map((e) => ({ ...e, key: `v${e.id}` })),
     ...activity.map((e) => ({ ...e, key: `a${e.id}` })),
   ];
+  const latest = latestLogEntry(log, activity);
+  const latestRank = latest !== undefined ? entryRank(latest) : undefined;
   return (
-    <ul className="log">
-      {[...all].reverse().map((entry) => (
-        <li key={entry.key} className={`log-${entry.kind}`}>
-          {formatLogEntry(entry, ctx)}
-        </li>
-      ))}
-    </ul>
+    <details className="panel log-panel">
+      <summary className="log-strip">
+        {latestRank !== undefined && <CardThumb rank={latestRank} className="log-thumb" />}
+        <span className={`log-strip-text ${latest === undefined ? 'muted' : ''}`}>
+          {latest !== undefined ? formatLogEntry(latest, ctx) : t('game.logEmpty')}
+        </span>
+      </summary>
+      <ul className="log">
+        {[...all].reverse().map((entry) => (
+          <li key={entry.key} className={`log-${entry.kind}`}>
+            {formatLogEntry(entry, ctx)}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

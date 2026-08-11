@@ -678,6 +678,38 @@ button:disabled {
   line-height: 1.4;
 }
 
+/* --- Latest-event strip + expandable log (issue 19) --- */
+
+.log-panel {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.log-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.log-thumb {
+  width: 1.7rem;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+  display: block;
+}
+
+.log-strip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 /* --- Log --- */
 
 .log {
@@ -690,6 +722,13 @@ button:disabled {
   max-height: 16rem;
   overflow-y: auto;
   font-size: 0.85rem;
+}
+
+.log-panel .log {
+  border: none;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
 }
 
 .log li {

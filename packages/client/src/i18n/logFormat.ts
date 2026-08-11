@@ -30,6 +30,30 @@ function rosterName(ctx: LogContext, playerId: string): string {
   return ctx.roster[playerId] ?? playerId;
 }
 
+/**
+ * The card rank an entry carries for the collapsed strip's thumbnail, if
+ * any. Only the rank-bearing kinds (`play`, `fizzle`, `guard`, `reveal`, a
+ * `discard` with a rank, and the peeker's own `peek` with the card) set the
+ * `rank` param; everything else renders text alone.
+ */
+export function entryRank(entry: LogEntry): Rank | undefined {
+  const rank = entry.params.rank;
+  return typeof rank === 'number' && rank >= 1 && rank <= 8 ? (rank as Rank) : undefined;
+}
+
+/**
+ * The single newest entry across the game log and room activity — the
+ * collapsed strip's content. Both sequences run oldest→newest; activity
+ * lines are client-generated from live packets and share no clock with the
+ * server log, so the strip follows the expanded list's convention: the
+ * newest activity line when any exist, else the newest log entry — the same
+ * entry the expanded list shows first. Undefined when both are empty (the
+ * lobby placeholder).
+ */
+export function latestLogEntry(log: LogEntry[], activity: LogEntry[]): LogEntry | undefined {
+  return activity.length > 0 ? activity[activity.length - 1]! : log[log.length - 1];
+}
+
 export function formatLogEntry(entry: LogEntry, ctx: LogContext): string {
   const { params } = entry;
   const name = (id: string) => displayName(ctx, id);
