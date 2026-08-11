@@ -13,15 +13,19 @@
  * (ADR-0003 untouched). Three states bridge the batches: a targeting play
  * opens a **pending** scene on its `play` entry; its resolution marker
  * (`guard`/`baron`/`prince`/`king`/`peek`) converts it into a **resolving**
- * scene for the verdict-carrying kinds (guard/baron/prince) — those are
- * emitted only when the reveal/discard that decides the outcome arrives, or
- * a trigger (the next play, a round boundary) closes them — so a split
- * between the marker and its consequences can never finalize a wrong
- * verdict. `king`/`peek` know their outcome at the marker and play at once.
- * Consequences in the same batch absorb into the open scene; a fizzle is its
- * own mini-scene; non-targeting plays (handmaid/countess/princess) are
- * single-card scenes; round/match wins become a banner moment that always
- * follows the final scene.
+ * scene for the verdict-carrying kinds (guard/baron/prince). Those scenes
+ * are **split in two**: the *sweep* (the played card lifting and traveling,
+ * with the Guard's accusation) is emitted at the marker so the animation
+ * starts immediately, and the *verdict beat* (the outcome flash/pair plus
+ * the caption) is emitted only when the reveal/discard that decides it
+ * arrives — or a trigger (the next play, a round boundary) closes it — so a
+ * split between the marker and its consequences can never finalize a wrong
+ * verdict, and a missed Guard still animates on time. `king`/`peek` know
+ * their outcome at the marker and play at once. Consequences in the same
+ * batch absorb into the open scene; a fizzle is its own mini-scene;
+ * non-targeting plays (handmaid/countess/princess) are single-card scenes;
+ * round/match wins become a banner moment that always follows the final
+ * scene.
  *
  * Privacy: the scene carries only what the viewer's own log shows. The
  * peeked card is present only on the Priest's chooser's stream; a wrong
@@ -156,18 +160,25 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
 
   const nextKey = () => `s${++seq}`;
 
-  /** Finalize the resolving scene's verdict and emit it (once). */
-  const emitResolving = () => {
+  /**
+   * Emit the verdict beat of a resolving (split) guard/baron/prince scene.
+   * The sweep scene was already emitted at the marker; this clones it with
+   * its finalized verdict as a second scene that plays the outcome.
+   */
+  const emitVerdict = () => {
     if (resolving === null) return;
-    finalizeScene(resolving);
-    scenes.push(resolving);
-    open = resolving; // same-batch consequences (a second Prince discard) still absorb
+    // Clone first — the sweep scene keeps no verdict (it renders only the
+    // travel steps); the verdict beat is a separate scene with the outcome.
+    const verdictScene = { ...resolving, key: nextKey() };
+    finalizeScene(verdictScene);
+    scenes.push(verdictScene);
+    open = verdictScene; // same-batch consequences (a second Prince discard) still absorb
     resolving = null;
   };
 
-  /** Close the open scene; emit any unresolved resolving scene first. */
+  /** Close the open scene; emit any pending verdict first. */
   const closeOpen = () => {
-    emitResolving();
+    emitVerdict();
     open = null;
   };
 
@@ -260,11 +271,16 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
         if (entry.kind === 'guard') {
           if (entryRank !== undefined) scene.guessRank = entryRank;
           scene.tag = { key: 'scene.guard.accuses', params: { actorId: playerId, targetId, rank: entryRank ?? played } };
-          // The hit/miss verdict needs the target's reveal — hold it.
+          // Split: the sweep plays now (the card lifts and sweeps with the
+          // accusation); the hit/miss verdict needs the target's reveal.
+          scenes.push(scene);
+          open = scene;
           resolving = scene;
         } else if (entry.kind === 'baron' || entry.kind === 'prince') {
-          // The outcome needs the loser's reveal (baron) or the target's
-          // discard (prince) — hold it.
+          // Split: the sweep plays now; the outcome needs the loser's reveal
+          // (baron) or the target's discard (prince).
+          scenes.push(scene);
+          open = scene;
           resolving = scene;
         } else if (entry.kind === 'king') {
           scene.verdict = { key: 'scene.king.swapped' };
@@ -294,16 +310,16 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
         if (resolving !== null && playerId !== undefined && entryRank !== undefined) {
           if (!hasEliminate && endsRound) {
             // Deck-empty round end with no resolution reveal (a missed Guard
-            // or a Baron tie) — finalize the scene as-is; the reveal belongs
+            // or a Baron tie) — emit the verdict as-is; the reveal belongs
             // to the round and animates nothing (the banner is the beat).
-            emitResolving();
+            emitVerdict();
             break;
           }
           // The reveal decides the outcome — even if its eliminate was split
           // to another batch, the reveal alone tells hit vs miss / win vs lose.
           resolving.revealedRank = entryRank;
           resolving.revealedAt = playerId;
-          emitResolving();
+          emitVerdict();
           break;
         }
         if (open !== null && playerId !== undefined && entryRank !== undefined && hasEliminate) {
@@ -332,9 +348,9 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
         const reason = params.reason as string | undefined;
         if (reason === 'prince') {
           if (resolving !== null && resolving.kind === 'prince') {
-            // The Prince's target discards — this decides the prince scene.
+            // The Prince's target discards — this decides the prince verdict.
             if (resolving.discardRank === undefined && entryRank !== undefined) resolving.discardRank = entryRank;
-            emitResolving();
+            emitVerdict();
             break;
           }
           if (open !== null && open.kind === 'prince') break; // a second card of the same forced discard
@@ -458,6 +474,8 @@ export interface Stage {
 /** How the renderer resolves names/cards for scene captions. */
 export interface SceneLoc {
   selfId: string;
+  /** Every player who ever joined, id → name — captions show names, never ids. */
+  roster: Record<string, string>;
   t: (key: MessageKey, params?: TParams) => string;
   cardName: (rank: Rank) => string;
 }
@@ -472,7 +490,8 @@ export const STAGE_MS = {
   banner: 2200,
 } as const;
 
-const name = (loc: SceneLoc, id: string) => (id === loc.selfId ? loc.t('common.you') : id);
+const name = (loc: SceneLoc, id: string) =>
+  id === loc.selfId ? loc.t('common.you') : (loc.roster[id] ?? id);
 const card = (loc: SceneLoc, rank: Rank) => loc.cardName(rank);
 const isSelf = (loc: SceneLoc, id: string) => id === loc.selfId;
 
@@ -556,6 +575,10 @@ function captionText(loc: SceneLoc, cap: SceneCaption): string {
  * cards sweep toward the target (a `via` waypoint) before settling. The
  * effect beat carries the verdict caption (~1.5s hold). The King plays to
  * the pile first, then the two (private) hand cards cross as backs.
+ *
+ * Guard/baron/prince scenes are split: without a verdict they render only
+ * the sweep (the card lifting and traveling), with a verdict they render
+ * the outcome beat (the flash/pair plus the caption).
  */
 export function sceneStages(scene: Scene, loc: SceneLoc): Stage[] {
   const { playedRank, actorId } = scene;
@@ -569,39 +592,46 @@ export function sceneStages(scene: Scene, loc: SceneLoc): Stage[] {
       : [{ kind: 'fly', rank, from: actorId, to: actorId, toPile: true }];
 
   switch (scene.kind) {
-    case 'guard': {
-      const tag = scene.tag !== undefined ? captionText(loc, scene.tag) : undefined;
+    case 'guard':
+      if (scene.verdict === undefined) {
+        // Sweep: the card lifts and sweeps toward the target, accused.
+        const tag = scene.tag !== undefined ? captionText(loc, scene.tag) : undefined;
+        return [
+          {
+            els: [
+              ...sweep(playedRank),
+              ...(targetId !== undefined && tag !== undefined ? [{ kind: 'tag' as const, text: tag, at: targetId }] : []),
+            ],
+            ms: STAGE_MS.fly,
+          },
+        ];
+      }
+      // Verdict: hit flashes the real card at the target; miss shows nothing.
       return [
-        {
-          els: [
-            ...sweep(playedRank),
-            ...(targetId !== undefined && tag !== undefined ? [{ kind: 'tag' as const, text: tag, at: targetId }] : []),
-          ],
-          ms: STAGE_MS.fly,
-        },
-        // Hit: the real card flashes at the target; miss: nothing to reveal.
         ...(scene.revealedRank !== undefined && scene.revealedAt !== undefined
           ? [{ els: [{ kind: 'flash' as const, rank: scene.revealedRank, at: scene.revealedAt }], ms: STAGE_MS.flash }]
           : []),
         caption(),
       ];
-    }
 
-    case 'baron': {
-      const revealed = scene.revealedRank !== undefined && scene.revealedAt !== undefined;
-      return [
-        { els: sweep(playedRank), ms: STAGE_MS.fly },
-        // The loser's card flashes; both public cards flash side by side
-        // when the target lost (the Baron backfiring shows the actor's own
-        // hand; a tie reveals nothing).
-        ...(revealed && scene.revealedAt === actorId
-          ? [{ els: [{ kind: 'flash' as const, rank: scene.revealedRank!, at: actorId }], ms: STAGE_MS.flash }]
-          : revealed && targetId !== undefined
-            ? [{ els: [{ kind: 'pair' as const, rankA: playedRank, atA: actorId, rankB: scene.revealedRank!, atB: scene.revealedAt! }], ms: STAGE_MS.pair }]
-            : []),
-        caption(),
-      ];
-    }
+    case 'baron':
+      if (scene.verdict === undefined) {
+        return [{ els: sweep(playedRank), ms: STAGE_MS.fly }];
+      }
+      {
+        const revealed = scene.revealedRank !== undefined && scene.revealedAt !== undefined;
+        return [
+          // The loser's card flashes; both public cards flash side by side
+          // when the target lost (the Baron backfiring shows the actor's own
+          // hand; a tie reveals nothing).
+          ...(revealed && scene.revealedAt === actorId
+            ? [{ els: [{ kind: 'flash' as const, rank: scene.revealedRank!, at: actorId }], ms: STAGE_MS.flash }]
+            : revealed && targetId !== undefined
+              ? [{ els: [{ kind: 'pair' as const, rankA: playedRank, atA: actorId, rankB: scene.revealedRank!, atB: scene.revealedAt! }], ms: STAGE_MS.pair }]
+              : []),
+          caption(),
+        ];
+      }
 
     case 'king':
       // The King plays to the pile first; the private hands cross as backs.
@@ -625,8 +655,10 @@ export function sceneStages(scene: Scene, loc: SceneLoc): Stage[] {
       ];
 
     case 'prince':
+      if (scene.verdict === undefined) {
+        return [{ els: sweep(playedRank), ms: STAGE_MS.fly }];
+      }
       return [
-        { els: sweep(playedRank), ms: STAGE_MS.fly },
         // The target's forced discard flies to their pile.
         ...(scene.discardRank !== undefined && targetId !== undefined
           ? [{ els: [{ kind: 'fly' as const, rank: scene.discardRank, from: targetId, to: targetId, toPile: true }], ms: STAGE_MS.flyDirect }]

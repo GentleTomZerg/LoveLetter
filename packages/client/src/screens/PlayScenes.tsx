@@ -31,6 +31,7 @@ import {
   initialSceneState,
   scenesFor,
   sceneStages,
+  STAGE_MS,
   type Scene,
   type SceneOrBanner,
   type SceneState,
@@ -244,19 +245,21 @@ function StageElView({
 function SceneView({
   scene,
   selfId,
+  roster,
   t,
   cardName,
   onDone,
 }: {
   scene: Scene;
   selfId: string;
+  roster: Record<string, string>;
   t: ReturnType<typeof useLocale>['t'];
   cardName: (rank: Rank) => string;
   onDone: () => void;
 }) {
   const stages = useMemo(
-    () => sceneStages(scene, { selfId, t, cardName }),
-    [scene, selfId, t, cardName],
+    () => sceneStages(scene, { selfId, roster, t, cardName }),
+    [scene, selfId, roster, t, cardName],
   );
   const [idx, setIdx] = useState(0);
   const doneRef = useRef(onDone);
@@ -292,11 +295,15 @@ function BannerView({ banner, onDone }: { banner: Banner; onDone: () => void }) 
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
   useEffect(() => {
-    const timer = setTimeout(() => doneRef.current(), 2200 + 400);
+    const timer = setTimeout(() => doneRef.current(), STAGE_MS.banner + 400);
     return () => clearTimeout(timer);
   }, []);
   return (
-    <div className="scene scene-banner" onAnimationEnd={onDone}>
+    <div
+      className="scene scene-banner"
+      style={{ '--ms': `${STAGE_MS.banner}ms` } as CSSProperties}
+      onAnimationEnd={onDone}
+    >
       {banner.text}
     </div>
   );
@@ -341,6 +348,7 @@ export function PlayScenes({ log, selfId, roster }: { log: LogEntry[]; selfId: s
           key={head.key} // a fresh mount per scene — the stage clock starts at zero
           scene={head}
           selfId={selfId}
+          roster={roster}
           t={t}
           cardName={cardName}
           onDone={() => advance(head.key)}

@@ -755,7 +755,7 @@ button:disabled {
     font-weight: 700;
     font-size: 1rem;
     transform: translate(-50%, -50%);
-    animation: scene-banner 2.2s ease-out forwards;
+    animation: scene-banner var(--ms, 2.2s) ease-out forwards;
   }
 
   @keyframes scene-banner {

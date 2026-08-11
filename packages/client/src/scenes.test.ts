@@ -1,8 +1,12 @@
 /**
  * Scene derivation (ticket 23) — how fresh log entries correlate into one
  * scene per play (the three-step template), plus the pure stage
- * decomposition the renderer plays. The DOM/queue/CSS behavior lives in the
- * ui-smoke scenario.
+ * decomposition the renderer plays. Guard/baron/prince resolutions are
+ * split in two — the sweep plays at the marker, the verdict beat when the
+ * reveal/discard decides it — so a split between the marker and its
+ * consequences can never finalize a wrong verdict, and a missed Guard still
+ * animates on time. The DOM/queue/CSS behavior lives in the ui-smoke
+ * scenario.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -25,6 +29,7 @@ const verdicts = (scenes: SceneOrBanner[]) =>
 
 const loc: SceneLoc = {
   selfId: 'C',
+  roster: { A: 'Alice', B: 'Bob', C: 'Carol' },
   t: (key, params) => t('en', key, params),
   cardName: (rank) => CARD_TEXT.en.name[rank],
 };
@@ -43,10 +48,10 @@ describe('scenesFor (ticket 23) — scene builder', () => {
     expect(handmaid.state.lastPlayed['A']).toBe(4);
   });
 
-  it('opens a pending scene for a targeting play and completes it on the resolution (Guard hit)', () => {
+  it('splits a Guard play into a prompt sweep and a hit verdict (Guard hit)', () => {
     let s = state();
     const first = run([entry(1, 'play', { playerId: 'A', rank: 1 }), entry(2, 'choice', { playerId: 'A' })], s);
-    expect(first.scenes).toEqual([]); // the scene waits for the resolution
+    expect(first.scenes).toEqual([]); // the sweep waits for the resolution marker
     expect(first.state.pending).toEqual({ kind: 'guard', actorId: 'A', playedRank: 1 });
 
     const second = run(
@@ -57,19 +62,13 @@ describe('scenesFor (ticket 23) — scene builder', () => {
       ],
       first.state,
     );
-    expect(kinds(second.scenes)).toEqual(['guard']);
-    const scene = second.scenes[0] as Scene;
-    expect(scene).toMatchObject({
-      kind: 'guard',
-      actorId: 'A',
-      targetId: 'B',
-      playedRank: 1,
-      guessRank: 8,
-      revealedRank: 8,
-      revealedAt: 'B',
-    });
-    expect(scene.tag).toEqual({ key: 'scene.guard.accuses', params: { actorId: 'A', targetId: 'B', rank: 8 } });
-    expect(scene.verdict).toEqual({ key: 'scene.guard.hit', params: { targetId: 'B', rank: 8 } });
+    expect(kinds(second.scenes)).toEqual(['guard', 'guard']); // sweep + verdict beat
+    const sweep = second.scenes[0] as Scene;
+    expect(sweep.verdict).toBeUndefined(); // the sweep animates immediately
+    expect(sweep.tag).toEqual({ key: 'scene.guard.accuses', params: { actorId: 'A', targetId: 'B', rank: 8 } });
+    const verdict = second.scenes[1] as Scene;
+    expect(verdict).toMatchObject({ kind: 'guard', actorId: 'A', targetId: 'B', playedRank: 1, guessRank: 8, revealedRank: 8, revealedAt: 'B' });
+    expect(verdict.verdict).toEqual({ key: 'scene.guard.hit', params: { targetId: 'B', rank: 8 } });
     expect(second.state.pending).toBeNull();
   });
 
@@ -77,19 +76,20 @@ describe('scenesFor (ticket 23) — scene builder', () => {
     let s = state();
     ({ state: s } = run([entry(1, 'play', { playerId: 'A', rank: 1 }), entry(2, 'choice', { playerId: 'A' })], s));
     const marker = run([entry(3, 'guard', { playerId: 'A', targetId: 'B', rank: 8 })], s);
-    expect(marker.scenes).toEqual([]); // the miss verdict needs the next trigger to close it
+    expect(kinds(marker.scenes)).toEqual(['guard']); // the sweep plays at once
+    expect((marker.scenes[0] as Scene).verdict).toBeUndefined();
     const { scenes } = run([entry(4, 'play', { playerId: 'B', rank: 4 })], marker.state);
-    expect(kinds(scenes)).toEqual(['guard', 'simple']);
-    const scene = scenes[0] as Scene;
-    expect(scene.revealedRank).toBeUndefined();
-    expect(scene.verdict).toEqual({ key: 'scene.guard.miss', params: { targetId: 'B', rank: 8 } });
+    expect(kinds(scenes)).toEqual(['guard', 'simple']); // the miss verdict, then B's play
+    const verdict = scenes[0] as Scene;
+    expect(verdict.revealedRank).toBeUndefined();
+    expect(verdict.verdict).toEqual({ key: 'scene.guard.miss', params: { targetId: 'B', rank: 8 } });
   });
 
   it('finalizes a split resolution correctly — the marker and its reveal arrive in separate batches', () => {
     let s = state();
     ({ state: s } = run([entry(1, 'play', { playerId: 'A', rank: 1 }), entry(2, 'choice', { playerId: 'A' })], s));
     const marker = run([entry(3, 'guard', { playerId: 'A', targetId: 'B', rank: 8 })], s);
-    expect(marker.scenes).toEqual([]);
+    expect(kinds(marker.scenes)).toEqual(['guard']); // the sweep
     const { scenes } = run(
       [entry(4, 'reveal', { playerId: 'B', rank: 8 }), entry(5, 'eliminate', { playerId: 'B', reason: 'guard' })],
       marker.state,
@@ -118,10 +118,11 @@ describe('scenesFor (ticket 23) — scene builder', () => {
       entry(4, 'reveal', { playerId: 'B', rank: 1 }),
       entry(5, 'eliminate', { playerId: 'B', reason: 'baron' }),
     ]);
-    expect(kinds(scenes)).toEqual(['baron']);
-    const scene = scenes[0] as Scene;
-    expect(scene).toMatchObject({ kind: 'baron', actorId: 'A', targetId: 'B', playedRank: 3, revealedRank: 1, revealedAt: 'B' });
-    expect(scene.verdict).toEqual({ key: 'scene.baron.vs', params: { actorId: 'A', rankA: 3, targetId: 'B', rankB: 1 } });
+    expect(kinds(scenes)).toEqual(['baron', 'baron']); // sweep + verdict beat
+    expect((scenes[0] as Scene).verdict).toBeUndefined();
+    const verdict = scenes[1] as Scene;
+    expect(verdict).toMatchObject({ kind: 'baron', actorId: 'A', targetId: 'B', playedRank: 3, revealedRank: 1, revealedAt: 'B' });
+    expect(verdict.verdict).toEqual({ key: 'scene.baron.vs', params: { actorId: 'A', rankA: 3, targetId: 'B', rankB: 1 } });
   });
 
   it('flags a Baron backfire when the actor loses (only their card is revealed)', () => {
@@ -135,21 +136,21 @@ describe('scenesFor (ticket 23) — scene builder', () => {
       ],
       s,
     );
-    const scene = scenes[0] as Scene;
-    expect(scene.revealedAt).toBe('A');
-    expect(scene.verdict).toEqual({ key: 'scene.baron.backfire', params: { actorId: 'A', rank: 7 } });
+    expect(kinds(scenes)).toEqual(['baron', 'baron']);
+    expect((scenes[1] as Scene).revealedAt).toBe('A');
+    expect((scenes[1] as Scene).verdict).toEqual({ key: 'scene.baron.backfire', params: { actorId: 'A', rank: 7 } });
   });
 
   it('calls a Baron tie when nothing is revealed (finalized by the next trigger)', () => {
     let s = state();
     ({ state: s } = run([entry(1, 'play', { playerId: 'A', rank: 3 }), entry(2, 'choice', { playerId: 'A' })], s));
     const marker = run([entry(3, 'baron', { playerId: 'A', targetId: 'B' })], s);
-    expect(marker.scenes).toEqual([]);
+    expect(kinds(marker.scenes)).toEqual(['baron']); // the sweep plays at once
     const { scenes } = run([entry(4, 'play', { playerId: 'B', rank: 4 })], marker.state);
     expect(kinds(scenes)).toEqual(['baron', 'simple']);
-    const scene = scenes[0] as Scene;
-    expect(scene.revealedRank).toBeUndefined();
-    expect(scene.verdict).toEqual({ key: 'scene.baron.tie', params: { actorId: 'A', targetId: 'B', rank: 3 } });
+    const verdict = scenes[0] as Scene;
+    expect(verdict.revealedRank).toBeUndefined();
+    expect(verdict.verdict).toEqual({ key: 'scene.baron.tie', params: { actorId: 'A', targetId: 'B', rank: 3 } });
   });
 
   it('keeps the King scene closed when a Countess discard follows a trade (ruling 2)', () => {
@@ -196,7 +197,7 @@ describe('scenesFor (ticket 23) — scene builder', () => {
     expect((scenes[0] as Scene).peekRank).toBe(3); // the last card seen
   });
 
-  it('folds the Prince target\'s discard into the prince scene', () => {
+  it('folds the Prince target\'s discard into the prince verdict', () => {
     let s = state();
     ({ state: s } = run([entry(1, 'play', { playerId: 'A', rank: 5 }), entry(2, 'choice', { playerId: 'A' })], s));
     const { scenes } = run(
@@ -206,10 +207,11 @@ describe('scenesFor (ticket 23) — scene builder', () => {
       ],
       s,
     );
-    expect(kinds(scenes)).toEqual(['prince']);
-    const scene = scenes[0] as Scene;
-    expect(scene.discardRank).toBe(3);
-    expect(scene.verdict).toEqual({ key: 'scene.prince', params: { targetId: 'B', rank: 3 } });
+    expect(kinds(scenes)).toEqual(['prince', 'prince']); // sweep + verdict beat
+    expect((scenes[0] as Scene).verdict).toBeUndefined();
+    const verdict = scenes[1] as Scene;
+    expect(verdict.discardRank).toBe(3);
+    expect(verdict.verdict).toEqual({ key: 'scene.prince', params: { targetId: 'B', rank: 3 } });
   });
 
   it('makes a fizzle its own mini-scene', () => {
@@ -267,11 +269,13 @@ describe('scenesFor (ticket 23) — scene builder', () => {
       ],
       s,
     );
-    expect(kinds(scenes)).toEqual(['guard', 'banner']);
-    const guard = scenes[0] as Scene;
-    expect(guard.revealedRank).toBe(8);
-    expect(guard.revealedAt).toBe('B');
-    expect(guard.verdict).toEqual({ key: 'scene.guard.hit', params: { targetId: 'B', rank: 8 } });
+    expect(kinds(scenes)).toEqual(['guard', 'guard', 'banner']); // sweep, hit verdict, banner
+    const sweep = scenes[0] as Scene;
+    const verdict = scenes[1] as Scene;
+    expect(sweep.verdict).toBeUndefined();
+    expect(verdict.revealedRank).toBe(8);
+    expect(verdict.revealedAt).toBe('B');
+    expect(verdict.verdict).toEqual({ key: 'scene.guard.hit', params: { targetId: 'B', rank: 8 } });
   });
 
   it('flashes a standalone reveal (a fold or leave) with no caption', () => {
@@ -321,9 +325,23 @@ describe('scenesFor (ticket 23) — scene builder', () => {
 });
 
 describe('sceneStages (ticket 23) — three-step decomposition', () => {
-  it('plays a Guard hit: sweep with the accusation tag, flash the real card, verdict', () => {
-    const scene: Scene = {
+  it('plays a Guard sweep (with the accusation tag) then a hit verdict', () => {
+    const sweep: Scene = {
       key: 's1',
+      kind: 'guard',
+      actorId: 'A',
+      targetId: 'B',
+      playedRank: 1,
+      guessRank: 8,
+      tag: { key: 'scene.guard.accuses', params: { actorId: 'A', targetId: 'B', rank: 8 } },
+    };
+    const sweepStages = sceneStages(sweep, loc);
+    expect(sweepStages).toHaveLength(1);
+    expect(sweepStages[0]!.els).toContainEqual({ kind: 'fly', rank: 1, from: 'A', via: 'B', to: 'A', toPile: true });
+    expect(sweepStages[0]!.els).toContainEqual({ kind: 'tag', text: 'Alice accuses Bob of the Princess?', at: 'B' });
+
+    const verdict: Scene = {
+      key: 's2',
       kind: 'guard',
       actorId: 'A',
       targetId: 'B',
@@ -331,37 +349,37 @@ describe('sceneStages (ticket 23) — three-step decomposition', () => {
       guessRank: 8,
       revealedRank: 8,
       revealedAt: 'B',
-      tag: { key: 'scene.guard.accuses', params: { actorId: 'A', targetId: 'B', rank: 8 } },
       verdict: { key: 'scene.guard.hit', params: { targetId: 'B', rank: 8 } },
     };
-    const stages = sceneStages(scene, loc);
-    expect(stages).toHaveLength(3);
-    expect(stages[0]!.els).toContainEqual({ kind: 'fly', rank: 1, from: 'A', via: 'B', to: 'A', toPile: true });
-    expect(stages[0]!.els).toContainEqual({ kind: 'tag', text: 'A accuses B of the Princess?', at: 'B' });
-    expect(stages[1]!.els).toEqual([{ kind: 'flash', rank: 8, at: 'B' }]);
-    expect(stages[2]!.els).toEqual([{ kind: 'caption', text: 'Hit! B had the Princess' }]);
-    expect(stages[2]!.ms).toBeGreaterThanOrEqual(1500); // the ~1.5s verdict hold
+    const verdictStages = sceneStages(verdict, loc);
+    expect(verdictStages).toHaveLength(2);
+    expect(verdictStages[0]!.els).toEqual([{ kind: 'flash', rank: 8, at: 'B' }]);
+    expect(verdictStages[1]!.els).toEqual([{ kind: 'caption', text: 'Hit! Bob had the Princess' }]);
+    expect(verdictStages[1]!.ms).toBeGreaterThanOrEqual(1500); // the ~1.5s verdict hold
   });
 
   it('plays a Guard miss without a flash', () => {
-    const scene: Scene = {
-      key: 's1',
+    const verdict: Scene = {
+      key: 's2',
       kind: 'guard',
       actorId: 'A',
       targetId: 'B',
       playedRank: 1,
       guessRank: 8,
-      tag: { key: 'scene.guard.accuses', params: { actorId: 'A', targetId: 'B', rank: 8 } },
       verdict: { key: 'scene.guard.miss', params: { targetId: 'B', rank: 8 } },
     };
-    const stages = sceneStages(scene, loc);
-    expect(stages).toHaveLength(2);
-    expect(stages[1]!.els).toEqual([{ kind: 'caption', text: 'No — B didn\'t have the Princess' }]);
+    const stages = sceneStages(verdict, loc);
+    expect(stages).toHaveLength(1);
+    expect(stages[0]!.els).toEqual([{ kind: 'caption', text: 'No — Bob didn\'t have the Princess' }]);
   });
 
   it('flashes both Baron cards side by side when the target loses', () => {
-    const scene: Scene = {
-      key: 's1',
+    const sweep: Scene = { key: 's1', kind: 'baron', actorId: 'A', targetId: 'B', playedRank: 3 };
+    const sweepStages = sceneStages(sweep, loc);
+    expect(sweepStages[0]!.els).toEqual([{ kind: 'fly', rank: 3, from: 'A', via: 'B', to: 'A', toPile: true }]);
+
+    const verdict: Scene = {
+      key: 's2',
       kind: 'baron',
       actorId: 'A',
       targetId: 'B',
@@ -370,15 +388,15 @@ describe('sceneStages (ticket 23) — three-step decomposition', () => {
       revealedAt: 'B',
       verdict: { key: 'scene.baron.vs', params: { actorId: 'A', rankA: 3, targetId: 'B', rankB: 1 } },
     };
-    const stages = sceneStages(scene, loc);
-    expect(stages).toHaveLength(3);
-    expect(stages[1]!.els).toEqual([{ kind: 'pair', rankA: 3, atA: 'A', rankB: 1, atB: 'B' }]);
-    expect(stages[2]!.els).toEqual([{ kind: 'caption', text: 'A\'s Baron vs B\'s Guard' }]);
+    const stages = sceneStages(verdict, loc);
+    expect(stages).toHaveLength(2);
+    expect(stages[0]!.els).toEqual([{ kind: 'pair', rankA: 3, atA: 'A', rankB: 1, atB: 'B' }]);
+    expect(stages[1]!.els).toEqual([{ kind: 'caption', text: 'Alice\'s Baron vs Bob\'s Guard' }]);
   });
 
   it('flashes only the actor\'s card when the Baron backfires', () => {
-    const scene: Scene = {
-      key: 's1',
+    const verdict: Scene = {
+      key: 's2',
       kind: 'baron',
       actorId: 'A',
       targetId: 'B',
@@ -387,8 +405,8 @@ describe('sceneStages (ticket 23) — three-step decomposition', () => {
       revealedAt: 'A',
       verdict: { key: 'scene.baron.backfire', params: { actorId: 'A', rank: 7 } },
     };
-    const stages = sceneStages(scene, loc);
-    expect(stages[1]!.els).toEqual([{ kind: 'flash', rank: 7, at: 'A' }]);
+    const stages = sceneStages(verdict, loc);
+    expect(stages[0]!.els).toEqual([{ kind: 'flash', rank: 7, at: 'A' }]);
   });
 
   it('crosses two card backs for the King swap after the King plays to the pile', () => {
@@ -421,8 +439,9 @@ describe('sceneStages (ticket 23) — three-step decomposition', () => {
       verdict: { key: 'scene.peek.self', params: { targetId: 'B', rank: 2 } },
     };
     const peekerStages = sceneStages(peeker, loc);
+    expect(peekerStages[0]!.els).toEqual([{ kind: 'fly', rank: 2, from: 'A', via: 'B', to: 'A', toPile: true }]);
     expect(peekerStages[1]!.els).toEqual([{ kind: 'flash', rank: 2, at: 'B' }]);
-    expect(peekerStages[2]!.els).toEqual([{ kind: 'caption', text: 'You saw B\'s Priest' }]);
+    expect(peekerStages[2]!.els).toEqual([{ kind: 'caption', text: 'You saw Bob\'s Priest' }]);
 
     const other: Scene = {
       key: 's1',
@@ -434,12 +453,16 @@ describe('sceneStages (ticket 23) — three-step decomposition', () => {
     };
     const otherStages = sceneStages(other, loc);
     expect(otherStages).toHaveLength(2); // no card flash — the peek happens unseen
-    expect(otherStages[1]!.els).toEqual([{ kind: 'caption', text: 'A peeked at B' }]);
+    expect(otherStages[1]!.els).toEqual([{ kind: 'caption', text: 'Alice peeked at Bob' }]);
   });
 
-  it('flies the Prince discard to the target\'s pile', () => {
-    const scene: Scene = {
-      key: 's1',
+  it('flies the Prince sweep first, then the target\'s discard with the verdict', () => {
+    const sweep: Scene = { key: 's1', kind: 'prince', actorId: 'A', targetId: 'B', playedRank: 5 };
+    const sweepStages = sceneStages(sweep, loc);
+    expect(sweepStages[0]!.els).toEqual([{ kind: 'fly', rank: 5, from: 'A', via: 'B', to: 'A', toPile: true }]);
+
+    const verdict: Scene = {
+      key: 's2',
       kind: 'prince',
       actorId: 'A',
       targetId: 'B',
@@ -447,8 +470,9 @@ describe('sceneStages (ticket 23) — three-step decomposition', () => {
       discardRank: 3,
       verdict: { key: 'scene.prince', params: { targetId: 'B', rank: 3 } },
     };
-    const stages = sceneStages(scene, loc);
-    expect(stages[1]!.els).toEqual([{ kind: 'fly', rank: 3, from: 'B', to: 'B', toPile: true }]);
+    const stages = sceneStages(verdict, loc);
+    expect(stages[0]!.els).toEqual([{ kind: 'fly', rank: 3, from: 'B', to: 'B', toPile: true }]);
+    expect(stages[1]!.els).toEqual([{ kind: 'caption', text: 'Bob discards the Baron' }]);
   });
 
   it('renders "You" for the viewer\'s own seat in captions', () => {
@@ -474,15 +498,15 @@ describe('sceneStages (ticket 23) — three-step decomposition', () => {
     const cases: Array<{ scene: Scene; en: string }> = [
       {
         scene: { key: 's1', kind: 'baron', actorId: 'A', targetId: 'B', playedRank: 3, verdict: { key: 'scene.baron.tie', params: { actorId: 'A', targetId: 'B', rank: 3 } } },
-        en: "A's Baron ties B",
+        en: "Alice's Baron ties Bob",
       },
       {
         scene: { key: 's2', kind: 'simple', actorId: 'A', playedRank: 7, verdict: { key: 'scene.countess.forced', params: { actorId: 'A', rank: 7 } } },
-        en: 'A discards the Countess (forced)',
+        en: 'Alice discards the Countess (forced)',
       },
       {
         scene: { key: 's3', kind: 'simple', actorId: 'A', playedRank: 8, verdict: { key: 'scene.princess', params: { actorId: 'A' } } },
-        en: 'A is out',
+        en: 'Alice is out',
       },
       {
         scene: { key: 's4', kind: 'simple', actorId: 'C', playedRank: 8, verdict: { key: 'scene.princess', params: { actorId: 'C' } } },
@@ -494,7 +518,7 @@ describe('sceneStages (ticket 23) — three-step decomposition', () => {
       },
       {
         scene: { key: 's6', kind: 'peek', actorId: 'A', targetId: 'B', playedRank: 2, verdict: { key: 'scene.peek.other', params: { actorId: 'A', targetId: 'B' } } },
-        en: 'A peeked at B',
+        en: 'Alice peeked at Bob',
       },
     ];
     for (const { scene, en } of cases) {
