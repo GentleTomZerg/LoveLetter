@@ -92,6 +92,9 @@ describe('zh interpolation integrity', () => {
     { id: 24, kind: 'info', params: { what: 'roundStarted', roundNumber: 3 } },
     { id: 25, kind: 'info', params: { what: 'rematchStarted' } },
     { id: 26, kind: 'info', params: { what: 'choiceAbandoned', playerId: 'B' } },
+    // Resolution completions (ticket 26)
+    { id: 27, kind: 'miss', params: { playerId: 'A', targetId: 'B', rank: 8, played: 1 } },
+    { id: 28, kind: 'tie', params: { playerId: 'A', targetId: 'B', rank: 3 } },
   ];
 
   it('renders every log kind without leftover placeholders', () => {
@@ -107,6 +110,24 @@ describe('zh interpolation integrity', () => {
     expect(formatLogEntry({ id: 1, kind: 'play', params: { playerId: 'A', rank: 3 } }, ctx())).toBe('你 打出了 男爵');
     // I targeted myself with the Prince
     expect(formatLogEntry({ id: 1, kind: 'prince', params: { playerId: 'A', targetId: 'A' } }, ctx())).toContain('自己');
+  });
+
+  it('renders the completion lines with the viewer-relative forms (ticket 26)', () => {
+    // I am the actor — the miss/tie lines take the .self forms.
+    expect(formatLogEntry({ id: 1, kind: 'miss', params: { playerId: 'A', targetId: 'B', rank: 8, played: 1 } }, ctx())).toBe(
+      '你的 守卫 猜错了——Bob 没有 公主',
+    );
+    expect(formatLogEntry({ id: 2, kind: 'tie', params: { playerId: 'A', targetId: 'B', rank: 3 } }, ctx())).toBe(
+      '你的 男爵 与 Bob 打平',
+    );
+    // A different viewer sees the plain forms with the roster name.
+    const c = ctx('X');
+    expect(formatLogEntry({ id: 3, kind: 'miss', params: { playerId: 'A', targetId: 'B', rank: 8, played: 1 } }, c)).toBe(
+      'Alice 的 守卫 猜错了——Bob 没有 公主',
+    );
+    expect(formatLogEntry({ id: 4, kind: 'tie', params: { playerId: 'A', targetId: 'B', rank: 3 } }, c)).toBe(
+      'Alice 的 男爵 与 Bob 打平',
+    );
   });
 
   it('joins round winners with 和 (and 、 for 3+)', () => {

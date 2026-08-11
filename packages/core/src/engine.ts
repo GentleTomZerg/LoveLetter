@@ -49,6 +49,8 @@ const GUARD_NAMED_OPTIONS: Rank[] = [2, 3, 4, 5, 6, 7, 8];
 /** Ranks whose combination with the Countess forces her discard (§4.7). */
 const COUNTESS: Rank = 7;
 const PRINCESS: Rank = 8;
+const GUARD: Rank = 1;
+const BARON: Rank = 3;
 
 /**
  * Validate and apply an intent to the state, returning the new state and the
@@ -268,7 +270,7 @@ function makeChoice(s: GameState, intent: Extract<Intent, { type: 'choice' }>): 
   const events: Event[] = [{ type: 'choiceMade', playerId: pc.playerId, choice: intent.choice }];
   switch (pc.kind) {
     case 'guard':
-      resolveGuardChoice(s, intent.choice as Extract<Choice, { kind: 'guard' }>, events);
+      resolveGuardChoice(s, pc.playerId, intent.choice as Extract<Choice, { kind: 'guard' }>, events);
       break;
     case 'priest':
       resolvePriestChoice(s, pc.playerId, intent.choice as Extract<Choice, { kind: 'priest' }>, events);
@@ -288,17 +290,30 @@ function makeChoice(s: GameState, intent: Extract<Intent, { type: 'choice' }>): 
   return ok(s, events);
 }
 
-/** Guard: a correct guess eliminates the target and reveals their hand. */
+/**
+ * Guard: a correct guess eliminates the target and reveals their hand; a
+ * wrong guess ends with an explicit `guardMissed` completion event (ticket 26)
+ * — no resolution is ever complete but silent. A miss reveals nothing: the
+ * event carries the (public) guess, never a card.
+ */
 function resolveGuardChoice(
   s: GameState,
+  chooserId: string,
   choice: Extract<Choice, { kind: 'guard' }>,
   events: Event[],
 ): void {
   const target = findPlayer(s, choice.targetPlayerId);
   if (target && target.hand.some((c) => c.rank === choice.namedRank)) {
     eliminate(s, target.id, 'guard', events);
+  } else {
+    events.push({
+      type: 'guardMissed',
+      playerId: chooserId,
+      targetId: choice.targetPlayerId,
+      guessRank: choice.namedRank,
+      rank: GUARD,
+    });
   }
-  // A wrong guess reveals nothing and changes nothing else.
 }
 
 /** Priest: the chooser alone sees the target's hand (rules spec §4.2). */
@@ -316,7 +331,11 @@ function resolvePriestChoice(
   }
 }
 
-/** Baron: compare the remaining hands; lower rank is out, tie → nothing. */
+/**
+ * Baron: compare the remaining hands; lower rank is out, a tie ends with an
+ * explicit `baronTied` completion event (ticket 26) — equal values reveal
+ * nothing, so the event carries only the (public) played Baron.
+ */
 function resolveBaronChoice(
   s: GameState,
   chooserId: string,
@@ -331,6 +350,9 @@ function resolveBaronChoice(
   // even when self-destructive (rules spec §4.3, §8.7).
   if (actorRank < targetRank) eliminate(s, actor.id, 'baron', events);
   else if (targetRank < actorRank) eliminate(s, target.id, 'baron', events);
+  else {
+    events.push({ type: 'baronTied', playerId: chooserId, targetId: choice.targetPlayerId, rank: BARON });
+  }
 }
 
 /**

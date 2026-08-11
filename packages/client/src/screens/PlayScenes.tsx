@@ -28,7 +28,6 @@ import type { LogEntry, Rank } from '@love-letter/core';
 import { useLocale } from '../i18n';
 import { formatLogEntry, type LogContext } from '../i18n/logFormat';
 import {
-  forceVerdict,
   initialSceneState,
   scenesFor,
   sceneStages,
@@ -335,18 +334,11 @@ export function PlayScenes({ log, selfId, roster }: { log: LogEntry[]; selfId: s
   }, [log]);
 
   // Only the head plays at a time; filter-by-key is idempotent, so a late
-  // scene drain can never skip the next one.
+  // scene drain can never skip the next one. Every resolution now completes
+  // with an explicit event (ticket 26), so no sweep ever drains without a
+  // verdict behind it — there is nothing to force.
   const advance = (key: string) => {
     setQueue((q) => q.filter((m) => m.key !== key));
-    // A split sweep drained with no verdict scene behind it — the reveal
-    // never came (a missed Guard / a Baron tie). Finalize the outcome now so
-    // the verdict caption is not delayed until the next play.
-    const pending = stateRef.current.resolving;
-    if (pending !== null && pending.key === key) {
-      const forced = forceVerdict(stateRef.current);
-      stateRef.current = forced.state;
-      if (forced.scenes.length > 0) setQueue((q) => [...q, ...forced.scenes]);
-    }
   };
   const head = queue[0] ?? null;
 

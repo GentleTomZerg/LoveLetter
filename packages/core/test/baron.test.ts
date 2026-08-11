@@ -53,6 +53,67 @@ describe('Baron (3)', () => {
     expect(result.state.currentTurn).toBe('B');
   });
 
+  it('a tie ends with an explicit `baronTied` completion event (ticket 26)', () => {
+    const s = makeGame(
+      [p('A', { hand: [card(3), card(2)] }), p('B', { hand: [card(2)] })],
+      { deck: deckOf(5, 6, 7) },
+    );
+    const result = playBaronAgainst(s, 'B');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Equal hands reveal nothing (rules spec §4.3) — the event carries only
+    // who compared, against whom, and the (public) played Baron.
+    expect(eventsOf(result.events, 'baronTied')).toEqual([
+      { type: 'baronTied', playerId: 'A', targetId: 'B', rank: 3 },
+    ]);
+    expect(eventsOf(result.events, 'handRevealed')).toHaveLength(0);
+    // The completion precedes the turn passing.
+    const idx = result.events.findIndex((e) => e.type === 'baronTied');
+    const turnIdx = result.events.findIndex((e) => e.type === 'turnStarted');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(idx).toBeLessThan(turnIdx);
+  });
+
+  it('a tie completes with `baronTied` in 3p and 4p, nobody eliminated', () => {
+    for (const players of [
+      [p('A', { hand: [card(3), card(2)] }), p('B', { hand: [card(2)] }), p('C', { hand: [card(5)] })],
+      [
+        p('A', { hand: [card(3), card(2)] }),
+        p('B', { hand: [card(2)] }),
+        p('C', { hand: [card(5)] }),
+        p('D', { hand: [card(6)] }),
+      ],
+    ]) {
+      const result = playBaronAgainst(makeGame(players, { deck: deckOf(7, 8, 8, 8, 8, 8, 8) }), 'B');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(eventsOf(result.events, 'baronTied')).toEqual([
+        { type: 'baronTied', playerId: 'A', targetId: 'B', rank: 3 },
+      ]);
+      expect(eventsOf(result.events, 'playerEliminated')).toHaveLength(0);
+      expect(result.state.currentTurn).toBe('B'); // seat order — nobody was eliminated
+    }
+  });
+
+  it('a tie as the final action precedes the deck-empty round reveals', () => {
+    // Deck empty at resolution: the tie completes first, then both hands
+    // reveal for the highest-hand comparison (A's discard total wins the tie).
+    const s = makeGame([p('A', { hand: [card(3), card(2)] }), p('B', { hand: [card(2)] })], { deck: [] });
+    const result = playBaronAgainst(s, 'B');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(eventsOf(result.events, 'baronTied')).toEqual([
+      { type: 'baronTied', playerId: 'A', targetId: 'B', rank: 3 },
+    ]);
+    const tieIdx = result.events.findIndex((e) => e.type === 'baronTied');
+    const revealIdx = result.events.findIndex((e) => e.type === 'handRevealed');
+    expect(tieIdx).toBeGreaterThanOrEqual(0);
+    expect(tieIdx).toBeLessThan(revealIdx);
+    // A tie eliminates nobody — the round ends on the highest hand.
+    expect(eventsOf(result.events, 'playerEliminated')).toHaveLength(0);
+    expect(eventsOf(result.events, 'roundEnded')[0]).toMatchObject({ winnerIds: ['A'], reason: 'highest-hand' });
+  });
+
   it('fizzles when the only opponent is protected', () => {
     const s = makeGame(
       [p('A', { hand: [card(3), card(1)] }), p('B', { hand: [card(2)], protected: true })],

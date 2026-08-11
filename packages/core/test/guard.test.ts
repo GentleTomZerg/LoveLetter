@@ -91,6 +91,24 @@ describe('Guard: resolving the guess', () => {
     expect(eventsOf(result.events, 'turnStarted')[0]).toMatchObject({ playerId: 'B' });
   });
 
+  it('a wrong guess ends with an explicit `guardMissed` completion event (ticket 26)', () => {
+    let result = apply(guardRound(), { type: 'playCard', playerId: 'A', which: 0 });
+    if (!result.ok) throw new Error(result.error);
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 8) });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The miss is public: who guessed, against whom, and the (public) guess —
+    // and nothing else. No card field: a miss reveals nothing (rules §4.1).
+    expect(eventsOf(result.events, 'guardMissed')).toEqual([
+      { type: 'guardMissed', playerId: 'A', targetId: 'B', guessRank: 8, rank: 1 },
+    ]);
+    // The completion must precede the turn passing (it is the resolution's end).
+    const idx = result.events.findIndex((e) => e.type === 'guardMissed');
+    const turnIdx = result.events.findIndex((e) => e.type === 'turnStarted');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(idx).toBeLessThan(turnIdx);
+  });
+
   it('rejects naming the Guard (Guard may never be named)', () => {
     let result = apply(guardRound(), { type: 'playCard', playerId: 'A', which: 0 });
     if (!result.ok) throw new Error(result.error);
@@ -141,6 +159,28 @@ describe('Guard: resolving the guess', () => {
 });
 
 describe('Guard in a 3-player round', () => {
+  it('a miss completes with `guardMissed` and the turn skips to the next player', () => {
+    const s = makeGame(
+      [
+        p('A', { hand: [card(1), card(1)] }),
+        p('B', { hand: [card(2)] }),
+        p('C', { hand: [card(6)] }),
+      ],
+      { deck: deckOf(5, 6, 7) },
+    );
+    let result = apply(s, { type: 'playCard', playerId: 'A', which: 0 });
+    if (!result.ok) throw new Error(result.error);
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 8) });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(eventsOf(result.events, 'guardMissed')).toEqual([
+      { type: 'guardMissed', playerId: 'A', targetId: 'B', guessRank: 8, rank: 1 },
+    ]);
+    expect(eventsOf(result.events, 'roundEnded')).toHaveLength(0);
+    expect(result.state.phase).toBe('round');
+    expect(result.state.currentTurn).toBe('B'); // nobody was eliminated — the turn passes in seat order
+  });
+
   it('an elimination does not end the round, and the turn skips the out player', () => {
     const s = makeGame(
       [
@@ -159,5 +199,54 @@ describe('Guard in a 3-player round', () => {
     expect(result.state.phase).toBe('round');
     expect(result.state.currentTurn).toBe('C'); // B is out, so C is next
     expect(eventsOf(result.events, 'cardDrawn')[0]).toMatchObject({ playerId: 'C' });
+  });
+});
+
+describe('Guard: a miss in 4p and at deck-empty (ticket 26)', () => {
+  it('emits `guardMissed` in a 4-player round and the turn passes', () => {
+    const s = makeGame(
+      [
+        p('A', { hand: [card(1), card(1)] }),
+        p('B', { hand: [card(2)] }),
+        p('C', { hand: [card(5)] }),
+        p('D', { hand: [card(6)] }),
+      ],
+      { deck: deckOf(7, 8, 8, 8) },
+    );
+    let result = apply(s, { type: 'playCard', playerId: 'A', which: 0 });
+    if (!result.ok) throw new Error(result.error);
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 8) });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(eventsOf(result.events, 'guardMissed')).toEqual([
+      { type: 'guardMissed', playerId: 'A', targetId: 'B', guessRank: 8, rank: 1 },
+    ]);
+    expect(eventsOf(result.events, 'roundEnded')).toHaveLength(0);
+    expect(result.state.currentTurn).toBe('B');
+  });
+
+  it('a miss as the final action precedes the deck-empty round reveals', () => {
+    // Deck empty at resolution: the miss completes first, then everyone still
+    // in the round reveals for the highest-hand comparison.
+    const s = makeGame(
+      [p('A', { hand: [card(1), card(1)] }), p('B', { hand: [card(2)] })],
+      { deck: [] },
+    );
+    let result = apply(s, { type: 'playCard', playerId: 'A', which: 0 });
+    if (!result.ok) throw new Error(result.error);
+    result = apply(result.state, { type: 'choice', playerId: 'A', choice: guardChoice('B', 8) });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(eventsOf(result.events, 'guardMissed')).toEqual([
+      { type: 'guardMissed', playerId: 'A', targetId: 'B', guessRank: 8, rank: 1 },
+    ]);
+    // The completion precedes the round-end reveals.
+    const missIdx = result.events.findIndex((e) => e.type === 'guardMissed');
+    const revealIdx = result.events.findIndex((e) => e.type === 'handRevealed');
+    expect(missIdx).toBeGreaterThanOrEqual(0);
+    expect(missIdx).toBeLessThan(revealIdx);
+    // A miss eliminates nobody — the round ends on the highest hand.
+    expect(eventsOf(result.events, 'roundEnded')[0]).toMatchObject({ reason: 'highest-hand' });
+    expect(eventsOf(result.events, 'playerEliminated')).toHaveLength(0);
   });
 });

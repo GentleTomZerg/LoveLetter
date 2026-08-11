@@ -313,3 +313,41 @@ describe('reduceView: public table state from events (replay fidelity)', () => {
     expect(view!.log.at(-1)).toMatchObject({ kind: 'eliminate', params: { playerId: 'A', reason: 'fold' } });
   });
 });
+
+describe('reduceView: resolution completion events (ticket 26)', () => {
+  it('maps guardMissed to a miss entry carrying the guess and the played card', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+    view = reduceView(view, { type: 'cardDealt', playerId: OTHER, card: card(2) }, SELF);
+    view = reduceView(view, { type: 'guardMissed', playerId: 'A', targetId: 'B', guessRank: 8, rank: 1 }, SELF);
+    // rank = the guessed card (same semantics as the guard marker entry),
+    // played = the played Guard — the miss line names both (ADR-0003 params).
+    expect(view!.log.at(-1)).toMatchObject({
+      kind: 'miss',
+      params: { playerId: 'A', targetId: 'B', rank: 8, played: 1 },
+    });
+    // Nothing else changed — a miss reveals nothing and eliminates nobody.
+    expect(view!.players[1]!.out).toBe(false);
+    expect(view!.players[1]!.handCount).toBe(1);
+  });
+
+  it('maps baronTied to a tie entry carrying the played Baron', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+    view = reduceView(view, { type: 'baronTied', playerId: 'A', targetId: 'B', rank: 3 }, SELF);
+    expect(view!.log.at(-1)).toMatchObject({
+      kind: 'tie',
+      params: { playerId: 'A', targetId: 'B', rank: 3 },
+    });
+  });
+
+  it('completion entries are public to every viewer — no card payload to redact', () => {
+    // The events carry no card, so every perspective folds the same entry.
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), OTHER);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, OTHER);
+    view = reduceView(view, { type: 'guardMissed', playerId: 'A', targetId: 'B', guessRank: 8, rank: 1 }, OTHER);
+    view = reduceView(view, { type: 'baronTied', playerId: 'B', targetId: 'A', rank: 3 }, OTHER);
+    expect(view!.log.at(-2)).toMatchObject({ kind: 'miss', params: { playerId: 'A', targetId: 'B', rank: 8, played: 1 } });
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'tie', params: { playerId: 'B', targetId: 'A', rank: 3 } });
+  });
+});

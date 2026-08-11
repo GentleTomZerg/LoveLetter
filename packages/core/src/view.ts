@@ -20,7 +20,7 @@ export interface PlayerView {
   handCount: number;
 }
 
-export type LogKind = 'play' | 'fizzle' | 'choice' | 'guard' | 'baron' | 'prince' | 'king' | 'peek' | 'discard' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'leave' | 'info';
+export type LogKind = 'play' | 'fizzle' | 'choice' | 'guard' | 'baron' | 'prince' | 'king' | 'peek' | 'discard' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'leave' | 'info' | 'miss' | 'tie';
 
 /**
  * Structured facts behind a log entry. The client's locale dictionary turns
@@ -238,6 +238,23 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
     case 'choiceAbandoned':
       v.pendingChoice = null;
       log('info', { what: 'choiceAbandoned', playerId: event.playerId });
+      break;
+
+    case 'guardMissed':
+      // The resolution's completion (ticket 26): a wrong Guard guess reveals
+      // nothing — the entry names the (public) guess and the played card.
+      log('miss', {
+        playerId: event.playerId,
+        targetId: event.targetId,
+        rank: event.guessRank,
+        played: event.rank,
+      });
+      break;
+
+    case 'baronTied':
+      // The resolution's completion (ticket 26): equal hands reveal nothing —
+      // the entry names who compared, against whom, and the played Baron.
+      log('tie', { playerId: event.playerId, targetId: event.targetId, rank: event.rank });
       break;
 
     case 'handTraded':

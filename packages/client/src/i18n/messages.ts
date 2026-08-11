@@ -93,6 +93,12 @@ export const en = {
   'log.choice.other': '{name} is choosing…',
   'log.guard': '{name} guessed {target} has {card}',
   'log.baron': '{name} compared hands with {target}',
+  // Resolution completions (ticket 26): the two outcomes that used to end
+  // silent now write their own line. `.self` avoids the possessive on "You".
+  'log.miss': "{name}'s {played} missed — {target} didn't have the {card}",
+  'log.miss.self': "Your {played} missed — {target} didn't have the {card}",
+  'log.tie': "{name}'s {played} tied {target}",
+  'log.tie.self': "Your {played} tied {target}",
   'log.prince': '{name} targeted {target} with the Prince',
   'log.king': '{name} traded hands with {target}',
   'log.peek.self': "You looked at {target}'s hand",
@@ -281,6 +287,10 @@ export const zh: Record<MessageKey, string> = {
   'log.choice.other': '{name} 正在选择…',
   'log.guard': '{name} 猜测 {target} 持有 {card}',
   'log.baron': '{name} 与 {target} 比较了手牌',
+  'log.miss': '{name} 的 {played} 猜错了——{target} 没有 {card}',
+  'log.miss.self': '你的 {played} 猜错了——{target} 没有 {card}',
+  'log.tie': '{name} 的 {played} 与 {target} 打平',
+  'log.tie.self': '你的 {played} 与 {target} 打平',
   'log.prince': '{name} 对 {target} 使用了王子',
   'log.king': '{name} 与 {target} 交换了手牌',
   'log.peek.self': '你查看了 {target} 的手牌',

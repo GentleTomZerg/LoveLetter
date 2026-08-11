@@ -90,6 +90,32 @@ export function formatLogEntry(entry: LogEntry, ctx: LogContext): string {
         name: name(params.playerId as string),
         target: name(params.targetId as string),
       });
+    case 'miss':
+      // The completion line names both cards: the played Guard and the guess
+      // (ticket 26). The `.self` form avoids the possessive on "You".
+      return params.playerId === ctx.selfId
+        ? ctx.t('log.miss.self', {
+          played: card(params.played),
+          target: name(params.targetId as string),
+          card: card(params.rank),
+        })
+        : ctx.t('log.miss', {
+          name: name(params.playerId as string),
+          played: card(params.played),
+          target: name(params.targetId as string),
+          card: card(params.rank),
+        });
+    case 'tie':
+      return params.playerId === ctx.selfId
+        ? ctx.t('log.tie.self', {
+          played: card(params.rank),
+          target: name(params.targetId as string),
+        })
+        : ctx.t('log.tie', {
+          name: name(params.playerId as string),
+          played: card(params.rank),
+          target: name(params.targetId as string),
+        });
     case 'peek':
       // Only the peeker's own stream carries the card (privacy redaction).
       if (params.rank !== undefined) {

@@ -145,6 +145,13 @@ export type Event =
   | { type: 'choiceRequired'; playerId: string; pendingChoice: PendingChoice }
   | { type: 'choiceMade'; playerId: string; choice: Choice }
   | { type: 'choiceAbandoned'; playerId: string } // a dropped player's open choice is void (fold)
+  // Resolution completion events: every targeting resolution ends with an
+  // explicit event, so no outcome is ever "complete but silent" (ticket 26).
+  // A miss/tie carries no card — a wrong Guard guess reveals nothing, a Baron
+  // tie nothing either (rules spec §4.1, §4.3). `rank` is the played card
+  // (public), `guessRank` the Guard's guess (public — the guess is announced).
+  | { type: 'guardMissed'; playerId: string; targetId: string; guessRank: Rank; rank: Rank }
+  | { type: 'baronTied'; playerId: string; targetId: string; rank: Rank }
   | { type: 'handTraded'; playerId: string; card: Card | null; count: number } // card visible only to the named player; count (received hand size) is public
   | { type: 'handPeeked'; playerId: string; targetPlayerId: string; card: Card | null } // card visible only to the Priest's chooser
   | { type: 'cardDiscarded'; playerId: string; card: Card; reason: 'prince' | 'countess' }
