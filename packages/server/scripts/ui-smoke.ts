@@ -7,9 +7,11 @@
  *  - chatPill   chat is a floating pill + modal dialog (ticket 20): newest-
  *               message preview, unread badge that clears on open, close on
  *               send/Esc/outside click, near-fullscreen dialog on phones.
- *  - logStrip   the log collapses to a latest-event strip under the table and
- *               expands in place (ticket 19): the strip shows the newest
- *               entry, tracks live play, and keeps its thumbnail rank-keyed.
+ *  - logStrip   the log is a top bar fixed at the top of the viewport (issue
+ *               21) collapsing to a latest-event strip and expanding in place
+ *               (ticket 19): the strip shows the newest entry, tracks live
+ *               play, keeps its thumbnail rank-keyed; the expanded history is
+ *               near-fullscreen on phones.
  *  - fullMatch  a complete 2-player match to the 7-token target: all eight
  *               cards appear in the public log, match end, rematch resets.
  *  - multiPlayer 3- and 4-player matches start, play, and end at the right
@@ -323,15 +325,30 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1b — ticket 19: the log collapses to a latest-event strip under
-// the table and expands in place. The strip shows the newest entry (with a
-// rank-keyed mini thumbnail when it carries a rank) and tracks live play;
-// clicking toggles the full newest-first list with its scroll height kept.
+// Scenario 1b — tickets 19 + 21: the log is a top bar fixed at the top of the
+// viewport (visible without scrolling), collapsing to the latest-event strip
+// and expanding to the full newest-first history in a panel beneath it —
+// near-fullscreen on phones. The strip shows the newest entry (with a
+// rank-keyed mini thumbnail when it carries a rank) and tracks live play.
 // ---------------------------------------------------------------------------
 
 async function runLogStrip(base: string, debugPort: number): Promise<void> {
   const [tabA, tabB] = await openTabs(debugPort, 2);
   await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+
+  // Issue 21: the bar is pinned to the top of the viewport, and the game
+  // content sits below it — the log is visible without scrolling.
+  const pinned = (await tabA.eval(`(() => {
+    const panel = document.querySelector('.log-panel');
+    const header = document.querySelector('.game-header');
+    if (panel === null || header === null) return null;
+    const pr = panel.getBoundingClientRect();
+    const hr = header.getBoundingClientRect();
+    return { top: pr.top, headerTop: hr.top, barH: pr.height };
+  })()`)) as { top: number; headerTop: number; barH: number } | null;
+  assert.ok(pinned !== null, 'log panel and game header present');
+  assert.equal(pinned!.top, 0, 'log bar is fixed at the top of the viewport');
+  assert.ok(pinned!.headerTop >= pinned!.barH, 'game content clears the log bar');
 
   // Some real play so the log has entries (a play line carries a rank).
   await playUntil([tabA, tabB], async () => (await nonEmptyPiles(tabA)) >= 2, 600);
@@ -368,6 +385,22 @@ async function runLogStrip(base: string, debugPort: number): Promise<void> {
   );
   await click(tabA, '.log-strip');
   await waitFor(tabA, `document.querySelector('.log-panel').open === false`, 5000, 'log panel collapses');
+
+  // Issue 21, phones: the expanded history is near-fullscreen — the bar stays
+  // on top as the toggle and the list fills the rest of the viewport.
+  await tabA.setViewport(375, 812);
+  await click(tabA, '.log-strip');
+  await waitFor(tabA, `document.querySelector('.log-panel').open === true`, 5000, 'log panel opens at phone width');
+  const fills = (await tabA.eval(`(() => {
+    const pr = document.querySelector('.log-panel').getBoundingClientRect();
+    const log = document.querySelector('.log-panel .log');
+    return { top: pr.top, bottom: pr.bottom, vh: window.innerHeight, logH: log?.getBoundingClientRect().height ?? 0 };
+  })()`)) as { top: number; bottom: number; vh: number; logH: number };
+  assert.equal(fills.top, 0, 'bar still at the top on phones');
+  assert.ok(fills.bottom >= fills.vh - 1, 'expanded panel reaches the viewport bottom (near-fullscreen)');
+  assert.ok(fills.logH > 0, 'expanded list visible at phone width');
+  await click(tabA, '.log-strip');
+  await waitFor(tabA, `document.querySelector('.log-panel').open === false`, 5000, 'log panel collapses at phone width');
 
   // The strip tracks live play: one more move must change the newest entry.
   const before = (await tabA.eval(`document.querySelector('.log-strip-text')?.textContent ?? null`)) as string | null;
@@ -625,7 +658,7 @@ async function main(): Promise<void> {
     await runRenderChecks(base, debugPort);
     console.log('[ui-smoke] chat pill + modal dialog (ticket 20)…');
     await runChatPill(base, debugPort);
-    console.log('[ui-smoke] latest-event strip + expandable log (ticket 19)…');
+    console.log('[ui-smoke] log top bar + expandable strip (tickets 19, 21)…');
     await runLogStrip(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');
     await runFullMatch(base, debugPort);

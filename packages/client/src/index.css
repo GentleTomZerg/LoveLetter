@@ -140,6 +140,12 @@ button:disabled {
   font-weight: 600;
 }
 
+/* On the game screen the log bar is fixed at the top (issue 21); the error
+   banner sticks below it so it stays visible and clickable. */
+.error-banner:has(+ .screen.game) {
+  top: 2.5rem;
+}
+
 /* --- Home --- */
 
 .home {
@@ -215,9 +221,11 @@ button:disabled {
 
 /* --- Game --- */
 
-/* The game screen is wider than Home/Lobby; single-column (issue 20, Q15). */
+/* The game screen is wider than Home/Lobby; single-column (issue 20, Q15).
+   The log bar is fixed at the top (issue 21), so the content clears it. */
 .screen.game {
   max-width: 1080px;
+  padding-top: 4.5rem;
 }
 
 .game-layout {
@@ -735,18 +743,32 @@ button:disabled {
   line-height: 1.4;
 }
 
-/* --- Latest-event strip + expandable log (issue 19) --- */
+/* --- Latest-event strip + expandable log (issues 19, 21) --- */
 
+/* The strip is a full-width bar fixed at the top (issue 21), visible at every
+   scroll position; the game content sits below it (see .screen.game padding).
+   The expanded history drops beneath the bar in the same fixed container. */
 .log-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
   gap: 0;
   padding: 0;
-  overflow: hidden;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .log-strip {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  max-width: 1080px;
+  margin: 0 auto;
   cursor: pointer;
   padding: 0.6rem 0.9rem;
   font-size: 0.85rem;
@@ -786,6 +808,21 @@ button:disabled {
   border-top: 1px solid var(--line);
   border-radius: 0;
   background: transparent;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+/* Near-fullscreen expanded history on phones (issue 21): the bar stays as
+   the toggle on top; the list fills the rest of the viewport. */
+@media (max-width: 640px) {
+  .log-panel[open] {
+    bottom: 0;
+  }
+
+  .log-panel[open] .log {
+    flex: 1;
+    max-height: none;
+  }
 }
 
 .log li {
