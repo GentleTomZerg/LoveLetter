@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import type { LogEntry } from '@love-letter/core';
 import { t } from './i18n';
 import { CARD_TEXT } from './i18n/cards';
-import { initialSceneState, scenesFor, sceneStages, type Scene, type SceneLoc, type SceneOrBanner } from './scenes';
+import { forceVerdict, initialSceneState, scenesFor, sceneStages, type Scene, type SceneLoc, type SceneOrBanner } from './scenes';
 
 const entry = (id: number, kind: LogEntry['kind'], params: LogEntry['params']): LogEntry => ({ id, kind, params });
 const fmt = () => 'banner text';
@@ -321,6 +321,48 @@ describe('scenesFor (ticket 23) — scene builder', () => {
   it('does not emit a resolution without a pending scene and no cache (defensive)', () => {
     const { scenes } = run([entry(1, 'baron', { playerId: 'A', targetId: 'B' })]);
     expect(scenes).toEqual([]);
+  });
+
+  it('forceVerdict finalizes a missed Guard as soon as its sweep drains', () => {
+    let s = state();
+    ({ state: s } = run([entry(1, 'play', { playerId: 'A', rank: 1 }), entry(2, 'choice', { playerId: 'A' })], s));
+    const marker = run([entry(3, 'guard', { playerId: 'A', targetId: 'B', rank: 8 })], s);
+    // The sweep played and drained; the reveal never came — finalize now.
+    const forced = forceVerdict(marker.state);
+    expect(kinds(forced.scenes)).toEqual(['guard']);
+    expect((forced.scenes[0] as Scene).verdict).toEqual({ key: 'scene.guard.miss', params: { targetId: 'B', rank: 8 } });
+    expect(forced.state.resolving).toBeNull();
+    // Idempotent — nothing left to finalize.
+    expect(forceVerdict(forced.state).scenes).toEqual([]);
+  });
+
+  it('forceVerdict turns a reveal-less Baron into a tie but leaves a Prince waiting', () => {
+    let s = state();
+    ({ state: s } = run([entry(1, 'play', { playerId: 'A', rank: 3 }), entry(2, 'choice', { playerId: 'A' })], s));
+    const baron = run([entry(3, 'baron', { playerId: 'A', targetId: 'B' })], s);
+    const forced = forceVerdict(baron.state);
+    expect((forced.scenes[0] as Scene).verdict).toEqual({ key: 'scene.baron.tie', params: { actorId: 'A', targetId: 'B', rank: 3 } });
+
+    let s2 = state();
+    ({ state: s2 } = run([entry(1, 'play', { playerId: 'A', rank: 5 }), entry(2, 'choice', { playerId: 'A' })], s2));
+    const prince = run([entry(3, 'prince', { playerId: 'A', targetId: 'B' })], s2);
+    expect(forceVerdict(prince.state).scenes).toEqual([]); // needs its discard entry
+    expect(prince.state.resolving).not.toBeNull();
+  });
+
+  it('forceVerdict is a no-op when the reveal already resolved the scene', () => {
+    let s = state();
+    ({ state: s } = run([entry(1, 'play', { playerId: 'A', rank: 1 }), entry(2, 'choice', { playerId: 'A' })], s));
+    const resolved = run(
+      [
+        entry(3, 'guard', { playerId: 'A', targetId: 'B', rank: 8 }),
+        entry(4, 'reveal', { playerId: 'B', rank: 8 }),
+        entry(5, 'eliminate', { playerId: 'B', reason: 'guard' }),
+      ],
+      s,
+    );
+    expect(resolved.state.resolving).toBeNull();
+    expect(forceVerdict(resolved.state).scenes).toEqual([]);
   });
 });
 

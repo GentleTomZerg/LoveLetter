@@ -402,6 +402,25 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
   return { state: { seq, lastPlayed, pending, resolving }, scenes };
 }
 
+/**
+ * Finalize a pending resolution whose reveal/discard never arrived (a missed
+ * Guard, a Baron tie) — the renderer calls this when a split sweep finishes
+ * playing with no verdict scene behind it, so the caption is not delayed
+ * until the next play. Only verdicts determinable without more data are
+ * emitted: a missed Guard (no reveal) and a Baron tie. A Prince needs its
+ * discard entry and stays pending until it arrives. Idempotent.
+ */
+export function forceVerdict(state: SceneState): { state: SceneState; scenes: SceneOrBanner[] } {
+  const pending = state.resolving;
+  if (pending === null || pending.kind === 'prince') return { state, scenes: [] };
+  const verdictScene = { ...pending, key: `s${state.seq + 1}` };
+  finalizeScene(verdictScene);
+  return {
+    state: { ...state, seq: state.seq + 1, resolving: null },
+    scenes: [verdictScene],
+  };
+}
+
 /** The verdict for a non-targeting play (handmaid/countess/princess). */
 function simpleVerdict(rank: Rank, actorId: string): SceneCaption {
   switch (rank) {
