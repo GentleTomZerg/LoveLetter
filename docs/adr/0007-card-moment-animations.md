@@ -25,3 +25,35 @@ Two privacy adaptations, forced by the engine's information model:
 Everything else carries over unchanged: reduced-motion disables all scenes, scenes are live-only (a reconnecting player never sees the past animate), the peeked card appears only on the Priest's chooser's screen, seats never fly (elimination is the existing out-state opacity transition — the tag/caption overlays narrate, they never carry a seat), and the win banner always follows the final scene — it never interrupts the story.
 
 Status: accepted. Source: grilling session (ticket 23).
+
+## Revision — resolutions always complete with an event (ticket 26)
+
+Ticket 23's scene builder had to **infer** the outcome of a Guard miss and a Baron tie: those two resolutions emitted no engine event, so the animation layer guessed "miss/tie" from the *absence* of a reveal — a `resolving` state, a split sweep/verdict pair, a `forceVerdict` fallback fired when the sweep drained, and a deck-empty lookahead to tell a resolution's reveal from the round-end reveal. The log could not show those two outcomes at all.
+
+Ticket 26 removes the gap at the source: **every resolution now ends with an explicit completion event.** The engine emits `guardMissed` and `baronTied` for the two formerly-silent outcomes (public — a miss reveals nothing, equal hands reveal nothing; each carries only `{playerId, targetId}`, the Guard's `guessRank`, and the played rank for the log line). The log folds them as `miss` / `tie` entries (ADR-0003), so **the log is a complete resolution transcript** — "A's Guard missed" and "A's Baron tied B" are written, never inferred.
+
+The client inference chain is deleted — no `resolving` state, no `emitVerdict` clone, no `forceVerdict`, no drain-check, no deck-empty lookahead. The verdict arrives **as data** in the completion event, one frame after the resolution marker (the client folds one event per socket frame; marker and completion are in the same apply burst). A guard/baron/prince scene now emits **whole at its completion entry** — the three-step story in one scene — and the sweep starts one frame later than before, imperceptible. The King (its trade has no log entry) and the Priest (its `peek` entry is marker and completion in one) still emit whole at their single entry. The visuals are unchanged.
+
+The completeness invariant — every branch of every card ends in a terminating event — is enforced by the per-card test suites, which assert exact event sequences (the completeness table below is the design contract):
+
+| Card | Outcome branch | Terminating event(s) |
+|---|---|---|
+| Guard (1) | guess hit | `handRevealed` + `playerEliminated` |
+| | guess miss | `guardMissed` |
+| | no legal target | `cardFizzled` |
+| Priest (2) | peek | `handPeeked` (×1–2) |
+| | no legal target | `cardFizzled` |
+| Baron (3) | win / backfire | `handRevealed` + `playerEliminated` |
+| | tie | `baronTied` |
+| | no legal target | `cardFizzled` |
+| Handmaid (4) | played | `cardPlayed` (protection applied) |
+| Prince (5) | discard + draw | `cardDiscarded` (+ `playerEliminated` on the Princess, `cardDrawn` on the draw) |
+| King (6) | hands swapped | `handTraded` (×2) |
+| | no legal target | `cardFizzled` |
+| Countess (7) | forced discard | `cardDiscarded` (countess) |
+| | played | `cardPlayed` (no effect) |
+| Princess (8) | played | `playerEliminated` (princess) |
+
+The Prince always has a legal target (it may target itself), so it never fizzles. This is a test-enforced invariant, not a type-enforced one — the table plus the per-card suites are the enforcement.
+
+Status: accepted. Source: design discussion (ticket 26).

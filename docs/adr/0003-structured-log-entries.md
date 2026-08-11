@@ -6,6 +6,6 @@ Decision: log entries carry no display text — `{id, kind, params}` (e.g. `{kin
 
 Consequences: the full log and the "latest event" strip share one formatting path; wire events are unchanged; tests that asserted on log text change to assert on kinds/params.
 
-Note: enriching resolution lines with cause/effect ("Bob is out — Alice's Baron beat his Guard") was considered in the same session and explicitly declined — entries stay one-per-event, params exactly as carried by the events.
+Note: enriching resolution lines with cause/effect ("Bob is out — Alice's Baron beat his Guard") was considered in the same session and explicitly declined — entries stay one-per-event, params exactly as carried by the events. **Revised for the silent outcomes only (ticket 26):** a Guard miss and a Baron tie used to emit no event at all, so the log could not show them and the presentation layer inferred them from absence. The engine now ends those two resolutions with explicit completion events (`guardMissed` / `baronTied`), and the log folds them as `miss` / `tie` entries — the log is a complete resolution transcript. The general decline stands: every other line still stays one-per-event with params exactly as carried.
 
-Status: accepted. Source: grilling session Q5 (2025).
+Status: accepted. Source: grilling session Q5 (2025); scoped revision, ticket 26.
