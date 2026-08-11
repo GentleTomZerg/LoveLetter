@@ -97,9 +97,9 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
 
           {me && me.protected && <p className="badge protected-badge">{t('game.protected')}</p>}
         </main>
-
-        <ChatPanel chat={game.chat} selfId={selfId} onSend={game.sendChat} />
       </div>
+
+      <ChatDialog chat={game.chat} selfId={selfId} onSend={game.sendChat} />
     </div>
   );
 }
@@ -213,59 +213,135 @@ function Abilities() {
 }
 
 /**
- * Room chat: a scrollable message list fed by `game.chat` (live relay + the
- * `chatLog` replay on resume) and a free-text input that sends through the
- * server relay. Enter submits; the send button stays disabled while empty.
+ * Chat as a floating pill + modal dialog (issue 20): the sidebar is gone — a
+ * fixed bottom-right pill previews the newest message inline (or a muted
+ * "Chat" when empty) and carries an unread-count badge that grows while the
+ * dialog is closed and clears on open. Clicking the pill opens a modal with
+ * the message list and input; it closes on outside click, Esc, or send
+ * (grilling Q12–Q15).
  */
-function ChatPanel({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: string; onSend: (text: string) => void }) {
+function ChatDialog({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: string; onSend: (text: string) => void }) {
   const { t } = useLocale();
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [unread, setUnread] = useState(0);
   const listRef = useRef<HTMLUListElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  // Others' messages the user has seen (dialog open, or up to the last
+  // close); only arrivals beyond this count while the dialog is closed become
+  // unread. Own messages never count — the relay echoes them back to this
+  // socket, so counting them would badge every message you send.
+  const seenRef = useRef(0);
+  // Latest others-count for event handlers, which would otherwise close over
+  // a stale prop (kept in sync after every render).
+  const othersRef = useRef(0);
 
-  // Keep the newest message in view as the list grows.
+  const isMine = (m: ChatMessage) => m.from === selfId;
+  const fromName = (m: ChatMessage) => (isMine(m) ? t('common.you') : m.name);
+  const othersCount = () => chat.reduce((n, m) => n + (isMine(m) ? 0 : 1), 0);
+
+  useEffect(() => {
+    othersRef.current = othersCount();
+  });
+
+  useEffect(() => {
+    if (open) return;
+    const now = othersCount();
+    if (now > seenRef.current) setUnread(now - seenRef.current);
+    else if (now < seenRef.current) {
+      // Replaced or cleared (e.g. the resume chatLog) — nothing to catch up on.
+      seenRef.current = now;
+      setUnread(0);
+    }
+  }, [chat, open]);
+
+  // Keep the newest message in view as the list grows (while the dialog is open).
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [chat]);
+  }, [chat, open]);
+
+  // Focus the input when the dialog opens.
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  // Esc closes the dialog through the same path as outside click and send, so
+  // the seen baseline stays in sync (a stale closure can't hurt: closeDialog
+  // reads the refs, which always hold the latest values).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeDialog();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  const openDialog = () => {
+    setOpen(true);
+    setUnread(0);
+    seenRef.current = othersRef.current;
+  };
+
+  const closeDialog = () => {
+    setOpen(false);
+    seenRef.current = othersRef.current;
+  };
+
+  const newest = chat.length > 0 ? chat[chat.length - 1]! : null;
+  const preview = newest !== null ? `${fromName(newest)}: ${newest.text}` : t('chat.title');
 
   const send = () => {
     const text = draft.trim();
     if (text.length === 0) return;
     onSend(text);
     setDraft('');
+    closeDialog();
   };
 
   return (
-    <aside className="panel chat">
-      <p className="panel-title">{t('chat.title')}</p>
-      <ul className="chat-log" ref={listRef}>
-        {chat.map((m, i) => (
-          <li key={i} className={m.from === selfId ? 'mine' : ''}>
-            <span className="chat-name">{m.from === selfId ? t('common.you') : m.name}</span>
-            <span className="chat-text">{m.text}</span>
-          </li>
-        ))}
-        {chat.length === 0 && <li className="muted chat-empty">{t('chat.empty')}</li>}
-      </ul>
-      <div className="chat-input">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') send();
-          }}
-          placeholder={t('chat.placeholder')}
-          maxLength={200}
-          autoCorrect="off"
-          autoCapitalize="sentences"
-          spellCheck={false}
-          autoComplete="off"
-        />
-        <button onClick={send} disabled={draft.trim().length === 0}>
-          {t('chat.send')}
-        </button>
-      </div>
-    </aside>
+    <>
+      <button className="chat-pill" onClick={openDialog}>
+        <span className={`chat-preview ${newest === null ? 'muted' : ''}`}>{preview}</span>
+        {unread > 0 && <span className="chat-badge">{unread}</span>}
+      </button>
+      {open && (
+        <div className="chat-modal" role="dialog" aria-modal="true" aria-label={t('chat.title')} onClick={closeDialog}>
+          <div className="chat-dialog panel" onClick={(e) => e.stopPropagation()}>
+            <p className="panel-title">{t('chat.title')}</p>
+            <ul className="chat-log" ref={listRef}>
+              {chat.map((m, i) => (
+                <li key={i} className={isMine(m) ? 'mine' : ''}>
+                  <span className="chat-name">{fromName(m)}</span>
+                  <span className="chat-text">{m.text}</span>
+                </li>
+              ))}
+              {chat.length === 0 && <li className="muted chat-empty">{t('chat.empty')}</li>}
+            </ul>
+            <div className="chat-input">
+              <input
+                ref={inputRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') send();
+                }}
+                placeholder={t('chat.placeholder')}
+                maxLength={200}
+                autoCorrect="off"
+                autoCapitalize="sentences"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button onClick={send} disabled={draft.trim().length === 0}>
+                {t('chat.send')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

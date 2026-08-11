@@ -4,6 +4,9 @@
  *
  *  - render     Home → Lobby → Game, scoreboard, discard piles, chat across
  *               tabs (ticket 06 render claims; screenshots saved for a look).
+ *  - chatPill   chat is a floating pill + modal dialog (ticket 20): newest-
+ *               message preview, unread badge that clears on open, close on
+ *               send/Esc/outside click, near-fullscreen dialog on phones.
  *  - logStrip   the log collapses to a latest-event strip under the table and
  *               expands in place (ticket 19): the strip shows the newest
  *               entry, tracks live play, and keeps its thumbnail rank-keyed.
@@ -282,20 +285,35 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
     'face-down backs equal the total cards held',
   );
 
+  // Chat lives behind a pill → modal dialog (issue 20): open on A, send
+  // (which closes the dialog), then check the relay and previews on both tabs.
+  await click(tabA, '.chat-pill');
+  await waitFor(tabA, `document.querySelector('.chat-dialog') !== null`, 5000, 'chat dialog opens on A');
   await setInput(tabA, '.chat-input input', 'hello from Alice');
   await click(tabA, '.chat-input button');
+  await waitFor(tabA, `document.querySelector('.chat-dialog') === null`, 5000, 'chat dialog closes on send');
+  await waitFor(
+    tabA,
+    `document.querySelector('.chat-preview')?.textContent.includes('You: hello from Alice')`,
+    10000,
+    'own message previewed on A',
+  );
+  await waitFor(
+    tabB,
+    `document.querySelector('.chat-preview')?.textContent.includes('Alice: hello from Alice')`,
+    10000,
+    'chat relayed to B',
+  );
+  await click(tabB, '.chat-pill');
+  await waitFor(tabB, `document.querySelector('.chat-dialog') !== null`, 5000, 'chat dialog opens on B');
   await waitFor(
     tabB,
     `[...document.querySelectorAll('.chat-log li')].some((li) => li.textContent.includes('hello from Alice'))`,
     10000,
-    'chat relayed to B',
+    'message in B list',
   );
-  await waitFor(
-    tabA,
-    `[...document.querySelectorAll('.chat-log li.mine')].some((li) => li.textContent.includes('You'))`,
-    10000,
-    'own message marked on A',
-  );
+  await tabB.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  await waitFor(tabB, `document.querySelector('.chat-dialog') === null`, 5000, 'chat dialog closes on Esc');
 
   await rm(SHOT_DIR, { recursive: true, force: true });
   await mkdir(SHOT_DIR, { recursive: true });
@@ -357,6 +375,93 @@ async function runLogStrip(base: string, debugPort: number): Promise<void> {
     [tabA, tabB],
     async () => (await tabA.eval(`document.querySelector('.log-strip-text')?.textContent ?? null`)) !== before,
     600,
+  );
+  await assertNoErrors(tabA, tabB);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 1c — ticket 20: chat is a floating pill + modal dialog. The pill
+// previews the newest message (muted "Chat" when empty) with an unread badge
+// that grows while the dialog is closed and clears on open; the dialog closes
+// on send, Esc, and outside click, and fills the viewport on phones.
+// ---------------------------------------------------------------------------
+
+async function runChatPill(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+
+  // Fresh room: chat is empty — the pill shows the muted default, no badge.
+  await waitFor(tabA, `document.querySelector('.chat-pill') !== null`, 10000, 'chat pill present');
+  assert.equal(
+    await tabA.eval(`document.querySelector('.chat-preview').textContent.trim()`),
+    'Chat',
+    'empty chat shows the muted default',
+  );
+  assert.equal(
+    await tabA.eval(`document.querySelector('.chat-pill .chat-badge') === null`),
+    true,
+    'no badge with no messages',
+  );
+
+  // A sends two messages while B's dialog stays closed: the badge counts 2
+  // and the preview always tracks the newest.
+  for (const text of ['hi from Alice', 'one more']) {
+    await click(tabA, '.chat-pill');
+    await waitFor(tabA, `document.querySelector('.chat-dialog') !== null`, 5000, 'dialog opens on A');
+    await setInput(tabA, '.chat-input input', text);
+    await click(tabA, '.chat-input button');
+    await waitFor(tabA, `document.querySelector('.chat-dialog') === null`, 5000, 'dialog closes on send');
+  }
+  await waitFor(tabA, `document.querySelector('.chat-preview')?.textContent.includes('You: one more')`, 10000, 'preview newest on A');
+  assert.equal(
+    await tabA.eval(`document.querySelector('.chat-pill .chat-badge') === null`),
+    true,
+    "the sender's own echoed messages never badge (seen baseline advances)",
+  );
+  await waitFor(tabB, `document.querySelector('.chat-badge')?.textContent === '2'`, 10000, 'unread badge 2 on B');
+  await waitFor(
+    tabB,
+    `document.querySelector('.chat-preview')?.textContent.includes('Alice: one more')`,
+    10000,
+    'preview newest on B',
+  );
+
+  // Opening the dialog clears the badge; both messages are in the list; Esc closes.
+  await click(tabB, '.chat-pill');
+  await waitFor(tabB, `document.querySelector('.chat-dialog') !== null`, 5000, 'dialog opens on B');
+  assert.equal(await tabB.eval(`document.querySelector('.chat-badge') === null`), true, 'badge clears on open');
+  assert.equal(
+    await tabB.eval(
+      `[...document.querySelectorAll('.chat-log li')].some((li) => li.textContent.includes('one more'))`,
+    ),
+    true,
+    'newest message in B list',
+  );
+  await tabB.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  await waitFor(tabB, `document.querySelector('.chat-dialog') === null`, 5000, 'dialog closes on Esc');
+
+  // One more message while closed → badge back to 1; outside click closes.
+  await click(tabA, '.chat-pill');
+  await waitFor(tabA, `document.querySelector('.chat-dialog') !== null`, 5000, 'dialog opens on A');
+  await setInput(tabA, '.chat-input input', 'third');
+  await click(tabA, '.chat-input button');
+  await waitFor(tabB, `document.querySelector('.chat-badge')?.textContent === '1'`, 10000, 'unread badge 1 on B');
+  await click(tabB, '.chat-pill');
+  await waitFor(tabB, `document.querySelector('.chat-dialog') !== null`, 5000, 'dialog opens on B');
+  await click(tabB, '.chat-modal'); // outside click closes
+  await waitFor(tabB, `document.querySelector('.chat-dialog') === null`, 5000, 'dialog closes on outside click');
+
+  // Phone viewport: the dialog fills the viewport (near-fullscreen, Q14).
+  await tabB.setViewport(375, 812);
+  await click(tabB, '.chat-pill');
+  await waitFor(tabB, `document.querySelector('.chat-dialog') !== null`, 5000, 'dialog opens at phone width');
+  const fills = (await tabB.eval(`(() => {
+    const r = document.querySelector('.chat-dialog').getBoundingClientRect();
+    return { w: r.width, h: r.height, vw: window.innerWidth, vh: window.innerHeight };
+  })()`)) as { w: number; h: number; vw: number; vh: number };
+  assert.ok(
+    fills.w >= fills.vw - 1 && fills.h >= fills.vh - 1,
+    `dialog near-fullscreen at phone size: ${JSON.stringify(fills)}`,
   );
   await assertNoErrors(tabA, tabB);
 }
@@ -453,15 +558,22 @@ async function runReloadResume(base: string, debugPort: number): Promise<void> {
   const [tabA, tabB] = await openTabs(debugPort, 2);
   await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
 
-  // A message sent before the drop must come back on resume (chatLog).
+  // A message sent before the drop must come back on resume (chatLog). The
+  // dialog opens from the pill and closes on send (issue 20).
+  await click(tabB, '.chat-pill');
+  await waitFor(tabB, `document.querySelector('.chat-dialog') !== null`, 5000, 'chat dialog opens on B');
   await setInput(tabB, '.chat-input input', 'see you after reload');
   await click(tabB, '.chat-input button');
+  await click(tabA, '.chat-pill');
+  await waitFor(tabA, `document.querySelector('.chat-dialog') !== null`, 5000, 'chat dialog opens on A');
   await waitFor(
     tabA,
     `[...document.querySelectorAll('.chat-log li')].some((li) => li.textContent.includes('see you after reload'))`,
     10000,
     'pre-reload chat visible on A',
   );
+  await tabA.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  await waitFor(tabA, `document.querySelector('.chat-dialog') === null`, 5000, 'chat dialog closes on A');
 
   // Some real mid-round state: at least one discard on the table.
   await playUntil([tabA, tabB], async () => (await nonEmptyPiles(tabA)) >= 1, 600);
@@ -469,12 +581,16 @@ async function runReloadResume(base: string, debugPort: number): Promise<void> {
 
   await tabA.reload();
   await waitFor(tabA, `document.querySelector('.screen.game') !== null`, 15000, 'game screen after reload');
+  await click(tabA, '.chat-pill');
+  await waitFor(tabA, `document.querySelector('.chat-dialog') !== null`, 5000, 'chat dialog opens after reload');
   await waitFor(
     tabA,
     `[...document.querySelectorAll('.chat-log li')].some((li) => li.textContent.includes('see you after reload'))`,
     10000,
     'chat history restored after reload',
   );
+  await tabA.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  await waitFor(tabA, `document.querySelector('.chat-dialog') === null`, 5000, 'chat dialog closes after reload');
   const after = (await publicSnapshot(tabA)) as { discards: string[]; tokens: string[]; header: string[] };
   assert.deepEqual(after, before, 'resumed tab reproduces the public table state exactly');
 
@@ -507,6 +623,8 @@ async function main(): Promise<void> {
     await runLocaleCheck(base, debugPort);
     console.log('[ui-smoke] render checks (Home → Lobby → Game, discards, chat)…');
     await runRenderChecks(base, debugPort);
+    console.log('[ui-smoke] chat pill + modal dialog (ticket 20)…');
+    await runChatPill(base, debugPort);
     console.log('[ui-smoke] latest-event strip + expandable log (ticket 19)…');
     await runLogStrip(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');
