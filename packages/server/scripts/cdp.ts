@@ -25,6 +25,11 @@ export interface CdpSession {
   screenshot(path: string): Promise<void>;
   /** Emulate a device viewport (CSS px) for layout checks. */
   setViewport(width: number, height: number): Promise<void>;
+  /** Emulate prefers-reduced-motion (ticket 22: card moments must disable). */
+  setReducedMotion(reduce: boolean): Promise<void>;
+  /** Bring the tab to the front — headless pages start hidden, which freezes
+   *  CSS animation clocks; call before asserting animation-driven behavior. */
+  bringToFront(): Promise<void>;
 }
 
 /** Launch Chrome headless with remote debugging; resolves once it answers. */
@@ -112,6 +117,16 @@ export async function openTabs(debugPort: number, count: number): Promise<CdpSes
         sessionId,
       );
     },
+    setReducedMotion: async (reduce: boolean) => {
+      await send(
+        'Emulation.setEmulatedMedia',
+        { features: [{ name: 'prefers-reduced-motion', value: reduce ? 'reduce' : 'no-preference' }] },
+        sessionId,
+      );
+    },
+    bringToFront: async () => {
+      await send('Page.bringToFront', {}, sessionId);
+    },
     screenshot: async (path: string) => {
       const r = (await send('Page.captureScreenshot', { format: 'png' }, sessionId)) as { data: string };
       await writeFile(path, Buffer.from(r.data, 'base64'));
@@ -125,6 +140,10 @@ export async function openTabs(debugPort: number, count: number): Promise<CdpSes
     const session = makeSession(sessionId);
     await send('Page.enable', {}, sessionId);
     await send('Runtime.enable', {}, sessionId);
+    // Headless pages start with visibilityState hidden, which freezes CSS
+    // animation clocks (no animationend ever fires); bring the tab to the
+    // front so animation-driven scenarios (ticket 22) behave like a real tab.
+    await send('Page.bringToFront', {}, sessionId);
     // Deterministic UI language: the smoke asserts English UI text, but the
     // app auto-detects the browser locale (ADR-0004) and headless Chrome
     // inherits the host OS's — override it before the page ever navigates.

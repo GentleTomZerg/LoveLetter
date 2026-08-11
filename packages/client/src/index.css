@@ -1,4 +1,6 @@
-/* Love Letter Online — functional-clean styling. No animations, just readable. */
+/* Love Letter Online — functional-clean styling. No decorative animations,
+   just readable; card-moment motion is functional and respects
+   prefers-reduced-motion (ADR-0007). */
 
 :root {
   --ink: #2b2b33;
@@ -222,10 +224,12 @@ button:disabled {
 /* --- Game --- */
 
 /* The game screen is wider than Home/Lobby; single-column (issue 20, Q15).
-   The log bar is fixed at the top (issue 21), so the content clears it. */
+   The log bar is fixed at the top (issue 21), so the content clears it;
+   position: relative anchors the card-moment layer (issue 22). */
 .screen.game {
   max-width: 1080px;
   padding-top: 4.5rem;
+  position: relative;
 }
 
 .game-layout {
@@ -579,6 +583,118 @@ button:disabled {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
+}
+
+/* --- Card moments (issue 22) ---
+
+   A transient, non-interactive layer over the table: cards fly between
+   seats (or to a discard pile), revealed cards flash, round/match wins get
+   a fading banner. Only cards move — elimination dims the seat through the
+   existing out-state transition. All motion is gated behind
+   prefers-reduced-motion: no-preference, honoring the functional-clean
+   ethos (ADR-0007): these are functional, not decorative. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .moments {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 20; /* above the table, below the log bar (30) and chat modal (40) */
+  }
+
+  .moment {
+    position: absolute;
+  }
+
+  .moment-fly {
+    width: 3.2rem;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    animation: moment-fly 1.1s ease-in-out forwards;
+  }
+
+  @keyframes moment-fly {
+    0% {
+      opacity: 0;
+      transform: translate(0, 0) scale(1);
+    }
+    12% {
+      opacity: 1;
+    }
+    82% {
+      opacity: 1;
+      transform: translate(var(--dx), var(--dy)) scale(0.95);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(var(--dx), var(--dy)) scale(0.95);
+    }
+  }
+
+  .moment-flash {
+    width: 4rem;
+    border-radius: 6px;
+    border: 2px solid var(--ok);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    animation: moment-flash 1.2s ease-out forwards;
+  }
+
+  @keyframes moment-flash {
+    0% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    25% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+    55% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.02);
+    }
+  }
+
+  .moment-banner {
+    left: 50%;
+    top: 40%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+    padding: 0.7rem 1.2rem;
+    font-weight: 700;
+    font-size: 1rem;
+    transform: translate(-50%, -50%);
+    animation: moment-banner 2.2s ease-out forwards;
+  }
+
+  @keyframes moment-banner {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) translateY(8px);
+    }
+    15% {
+      opacity: 1;
+      transform: translate(-50%, -50%) translateY(0);
+    }
+    80% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* Elimination dims the seat via the existing out state's opacity. */
+  .scoreboard .seat {
+    transition: opacity 0.5s ease;
+  }
 }
 
 /* --- Chat: floating pill + modal dialog (issue 20) --- */

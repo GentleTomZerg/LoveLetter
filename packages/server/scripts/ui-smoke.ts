@@ -7,6 +7,9 @@
  *  - chatPill   chat is a floating pill + modal dialog (ticket 20): newest-
  *               message preview, unread badge that clears on open, close on
  *               send/Esc/outside click, near-fullscreen dialog on phones.
+ *  - cardMoments  card-moment animations (ticket 22): a fly/flash/banner
+ *               plays as entries land live and drains; prefers-reduced-motion
+ *               disables all motion.
  *  - logStrip   the log is a top bar fixed at the top of the viewport (issue
  *               21) collapsing to a latest-event strip and expanding in place
  *               (ticket 19): the strip shows the newest entry, tracks live
@@ -500,6 +503,57 @@ async function runChatPill(base: string, debugPort: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 1d — ticket 22: card-moment animations. A moment element appears
+// as play happens and drains on its own; every animated card stays
+// rank-keyed; under prefers-reduced-motion no moment ever appears.
+// ---------------------------------------------------------------------------
+
+async function runCardMoments(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+
+  // tabB was brought to front last in openTabs — make tabA visible again so
+  // its animation clock runs (headless pages freeze animations while hidden).
+  await tabA.bringToFront();
+
+  // Drive play until a moment is caught mid-flight (fly 1.1s / flash 1.2s /
+  // banner 2.2s — long enough for playUntil's per-iteration poll to see one).
+  await playUntil(
+    [tabA, tabB],
+    async () => (await tabA.eval(`document.querySelector('.moments .moment') !== null`)) as boolean,
+    600,
+  );
+  const anySrc = (await tabA.eval(`(() => {
+    const img = document.querySelector('.moments img');
+    return img === null ? null : img.getAttribute('src');
+  })()`)) as string | null;
+  assert.ok(
+    anySrc === null || /^\/cards\/[1-8]\.png$/.test(anySrc),
+    `animated cards stay rank-keyed: ${anySrc}`,
+  );
+
+  // The queue drains on its own — no input needed to clear it.
+  await waitFor(tabA, `document.querySelectorAll('.moments .moment').length === 0`, 15000, 'moments drain');
+
+  // Reduced motion: play more, no moment may ever appear. Progress is
+  // measured by the log text growing — any entry means a real play/choice
+  // happened, and under reduced motion the top-bar text is the moment
+  // carrier (the spec's own framing). Non-empty pile COUNT can't be used:
+  // it caps at the seat count, so a round where both seats already have
+  // piles can never exceed its own baseline (a round reset only drops it).
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+  const logBefore = (await logText(tabA)) as string;
+  await playUntil([tabA, tabB], async () => ((await logText(tabA)) as string) !== logBefore, 600);
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.moments .moment').length`),
+    0,
+    'no card moments under prefers-reduced-motion',
+  );
+  await assertNoErrors(tabA, tabB);
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 2 — full 2-player match to the 7-token target + rematch
 // ---------------------------------------------------------------------------
 
@@ -660,6 +714,8 @@ async function main(): Promise<void> {
     await runChatPill(base, debugPort);
     console.log('[ui-smoke] log top bar + expandable strip (tickets 19, 21)…');
     await runLogStrip(base, debugPort);
+    console.log('[ui-smoke] card-moment animations (ticket 22)…');
+    await runCardMoments(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');
     await runFullMatch(base, debugPort);
     console.log('[ui-smoke] 3- and 4-player matches…');

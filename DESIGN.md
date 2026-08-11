@@ -29,7 +29,7 @@ Primary design record. Source: grilling session (stateless `/grilling` primitive
 | Q12 | Disconnect | **Grace + auto-fold** | 60s grace; if their turn comes and still gone → out of the round; rejoin next round |
 | Q13 | Turn timer | **None** | Soft clock maybe later |
 | Q14 | Chat | **Simple free-text room chat** | ~30 lines on the WS layer; friends-only |
-| Q15 | UI polish | **Functional-clean** | Readable cards, log, scoreboard; no animations |
+| Q15 | UI polish | **Functional-clean** | Readable cards, log, scoreboard; no *decorative* animation — card-moment motion is functional and reduced-motion aware (ADR-0007) |
 | Q16 | Testing | **Vitest on `core`** | Per-card suites + rulings + random-play full-match simulation |
 | Q17 | Rules rulings | **Adopt all four** (see below) | Matches AEG later editions / Board Game Arena |
 | Q18 | Lobby | Creator picks capacity (2–4), **auto-start when full** | Rooms always support 2 |
