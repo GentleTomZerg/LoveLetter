@@ -74,6 +74,8 @@ describe('scenesFor (ticket 23 + 26) — scene builder', () => {
     expect(scene).toMatchObject({ kind: 'guard', actorId: 'A', targetId: 'B', playedRank: 1, guessRank: 8, revealedRank: 8, revealedAt: 'B' });
     expect(scene.tag).toEqual({ key: 'scene.guard.accuses', params: { actorId: 'A', targetId: 'B', rank: 8 } });
     expect(scene.verdict).toEqual({ key: 'scene.guard.hit', params: { targetId: 'B', rank: 8 } });
+    // The scene narrates the reveal that completed it — the strip follows it (ticket 24).
+    expect(scene.entryId).toBe(4);
     expect(scenes.length).toBe(1);
   });
 
@@ -87,6 +89,7 @@ describe('scenesFor (ticket 23 + 26) — scene builder', () => {
     expect(scene.revealedRank).toBeUndefined(); // a miss reveals nothing
     expect(scene.verdict).toEqual({ key: 'scene.guard.miss', params: { targetId: 'B', rank: 8 } });
     expect(scene.tag).toEqual({ key: 'scene.guard.accuses', params: { actorId: 'A', targetId: 'B', rank: 8 } });
+    expect(scene.entryId).toBe(4); // the miss entry — the strip follows it (ticket 24)
     expect(scenes.length).toBe(1); // no sweep + verdict pair
   });
 
@@ -240,7 +243,7 @@ describe('scenesFor (ticket 23 + 26) — scene builder', () => {
       first.state,
     );
     expect(kinds(scenes)).toEqual(['banner']); // no standalone reveal flashes
-    expect(scenes[0]).toEqual({ key: 's2', kind: 'banner', text: 'banner text' });
+    expect(scenes[0]).toEqual({ key: 's2', entryId: 4, kind: 'banner', text: 'banner text' });
   });
 
   it('does not leak round-ending reveals into a hit guard scene (guard hit + deck empty)', () => {
@@ -278,9 +281,9 @@ describe('scenesFor (ticket 23 + 26) — scene builder', () => {
 
   it('banners round and match endings with localized text', () => {
     const round = run([entry(1, 'round', { winners: ['A'], reason: 'last-standing' })]);
-    expect(round.scenes).toEqual([{ key: 's1', kind: 'banner', text: 'banner text' }]);
+    expect(round.scenes).toEqual([{ key: 's1', entryId: 1, kind: 'banner', text: 'banner text' }]);
     const match = run([entry(1, 'match', { winnerId: 'A' })]);
-    expect(match.scenes[0]).toEqual({ key: 's1', kind: 'banner', text: 'banner text' });
+    expect(match.scenes[0]).toEqual({ key: 's1', entryId: 1, kind: 'banner', text: 'banner text' });
   });
 
   it('never animates informational, join/leave, or choice lines', () => {

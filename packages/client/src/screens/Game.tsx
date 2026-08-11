@@ -3,13 +3,16 @@ import type { Card, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Ra
 import type { Game } from '../useGame';
 import { useLocale, joinLocalizedList } from '../i18n';
 import { formatLogEntry, entryRank, latestLogEntry, type LogContext } from '../i18n/logFormat';
-import { PlayScenes } from './PlayScenes';
+import { PlayScenes, usePlayScenes } from './PlayScenes';
 
 export function Game({ view, selfId, game }: { view: ViewState; selfId: string; game: Game }) {
   const { t, cardName } = useLocale();
+  const scenes = usePlayScenes(view.log, selfId, view.roster);
   const me = view.players.find((p) => p.id === selfId);
   const myTurn = view.currentTurn === selfId;
-  const canPlay = view.phase === 'round' && myTurn && view.pendingChoice === null;
+  // Ticket 24: the round waits — the hand stays disabled until the scene
+  // queue drains, so nobody acts over a resolution that is still animating.
+  const canPlay = view.phase === 'round' && myTurn && view.pendingChoice === null && !scenes.busy;
   const myChoice = view.pendingChoice !== null && view.pendingChoice.playerId === selfId;
 
   const playerName = (id: string) =>
@@ -57,6 +60,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
                 selfId={selfId}
                 players={view.players}
                 onChoice={game.sendChoice}
+                disabled={scenes.busy}
               />
             )}
 
@@ -94,13 +98,19 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
 
           <Abilities />
 
-          <Log log={view.log} activity={game.activity} selfId={selfId} roster={view.roster} />
+          <Log
+            log={view.log}
+            activity={game.activity}
+            selfId={selfId}
+            roster={view.roster}
+            beat={scenes.currentEntry}
+          />
 
           {me && me.protected && <p className="badge protected-badge">{t('game.protected')}</p>}
         </main>
       </div>
 
-      <PlayScenes log={view.log} selfId={selfId} roster={view.roster} />
+      <PlayScenes scenes={scenes} selfId={selfId} roster={view.roster} />
 
       <ChatDialog chat={game.chat} selfId={selfId} onSend={game.sendChat} />
     </div>
@@ -353,17 +363,21 @@ function ChatDialog({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: str
  * The two-step choice prompt: the Guard names a target then a card; the other
  * four targeting cards just pick a target. The guess is sent the moment the
  * last piece is chosen; the local selection resets on each new pending choice.
+ * `disabled` (ticket 24) holds the buttons while a scene is animating — the
+ * round waits for the queue to drain before anyone acts.
  */
 function ChoicePanel({
   pendingChoice,
   selfId,
   players,
   onChoice,
+  disabled,
 }: {
   pendingChoice: PendingChoice;
   selfId: string;
   players: PlayerView[];
   onChoice: (choice: Choice) => void;
+  disabled: boolean;
 }) {
   const { t, cardName } = useLocale();
   const [targetId, setTargetId] = useState<string | null>(null);
@@ -392,6 +406,7 @@ function ChoicePanel({
           {pendingChoice.targets.map((id, i) => (
             <button
               key={id}
+              disabled={disabled}
               onClick={() => onChoice({ kind: pendingChoice.kind, targetPlayerId: id })}
             >
               {targetNames[i]}
@@ -407,7 +422,7 @@ function ChoicePanel({
       <p className="choice-prompt">{t('choice.guard')}</p>
       <div className="choice-row">
         {pendingChoice.targets.map((id, i) => (
-          <button key={id} className={targetId === id ? 'selected' : ''} onClick={() => setTargetId(id)}>
+          <button key={id} className={targetId === id ? 'selected' : ''} disabled={disabled} onClick={() => setTargetId(id)}>
             {targetNames[i]}
           </button>
         ))}
@@ -417,6 +432,7 @@ function ChoicePanel({
           {pendingChoice.namedOptions.map((rank) => (
             <button
               key={rank}
+              disabled={disabled}
               onClick={() => onChoice({ kind: 'guard', targetPlayerId: targetId, namedRank: rank })}
             >
               <CardThumb rank={rank} className="choice-thumb" />
@@ -438,17 +454,24 @@ function ChoicePanel({
  * two sequences use separate id counters, so the keys are prefixed to stay
  * unique and stable across inserts. Entries are structured (ADR-0003);
  * `formatLogEntry` renders them in the viewer's locale.
+ *
+ * Ticket 24: while a scene animates, the strip shows the **beat** — the log
+ * entry the current scene narrates — so it never races ahead of the
+ * animation (the win line lands only when the win banner plays). Idle or
+ * reduced-motion (no scenes enqueue) → the latest entry, exactly as before.
  */
 function Log({
   log,
   activity,
   selfId,
   roster,
+  beat,
 }: {
   log: LogEntry[];
   activity: LogEntry[];
   selfId: string;
   roster: Record<string, string>;
+  beat: LogEntry | undefined;
 }) {
   const { t, cardName } = useLocale();
   const ctx: LogContext = { selfId, roster, t, cardName };
@@ -456,14 +479,14 @@ function Log({
     ...log.map((e) => ({ ...e, key: `v${e.id}` })),
     ...activity.map((e) => ({ ...e, key: `a${e.id}` })),
   ];
-  const latest = latestLogEntry(log, activity);
-  const latestRank = latest !== undefined ? entryRank(latest) : undefined;
+  const strip = beat ?? latestLogEntry(log, activity);
+  const stripRank = strip !== undefined ? entryRank(strip) : undefined;
   return (
     <details className="panel log-panel">
       <summary className="log-strip">
-        {latestRank !== undefined && <CardThumb rank={latestRank} className="log-thumb" />}
-        <span className={`log-strip-text ${latest === undefined ? 'muted' : ''}`}>
-          {latest !== undefined ? formatLogEntry(latest, ctx) : t('game.logEmpty')}
+        {stripRank !== undefined && <CardThumb rank={stripRank} className="log-thumb" />}
+        <span className={`log-strip-text ${strip === undefined ? 'muted' : ''}`}>
+          {strip !== undefined ? formatLogEntry(strip, ctx) : t('game.logEmpty')}
         </span>
       </summary>
       <ul className="log">

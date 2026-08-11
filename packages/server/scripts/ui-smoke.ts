@@ -10,6 +10,11 @@
  *  - sceneAnimations  scene-based card animations (ticket 23): a scene plays
  *               through (the card appears, the verdict caption appears, the
  *               queue drains); prefers-reduced-motion disables all scenes.
+ *  - sceneBlocking  ticket 24: the round waits — the hand and choice buttons
+ *               are disabled while a scene animates and re-enabled after the
+ *               drain; the strip follows the animating beat (the win line
+ *               appears only when the win banner plays); under reduced motion
+ *               nothing enqueues, so the round never blocks.
  *  - logStrip   the log is a top bar fixed at the top of the viewport (issue
  *               21) collapsing to a latest-event strip and expanding in place
  *               (ticket 19): the strip shows the newest entry, tracks live
@@ -356,6 +361,10 @@ async function runLogStrip(base: string, debugPort: number): Promise<void> {
   // Some real play so the log has entries (a play line carries a rank).
   await playUntil([tabA, tabB], async () => (await nonEmptyPiles(tabA)) >= 2, 600);
 
+  // Ticket 24: while a scene animates the strip follows the beat, so the
+  // newest-entry snapshot must wait for the queue to drain first.
+  await waitFor(tabA, `document.querySelectorAll('.scenes .scene').length === 0`, 20000, 'scenes idle before the strip snapshot');
+
   // One atomic snapshot: the strip and the top of the expanded list must show
   // the same entry, and any thumbnail must stay rank-keyed (never a card name).
   const snap = (await tabA.eval(`(() => {
@@ -565,6 +574,144 @@ async function runSceneAnimations(base: string, debugPort: number): Promise<void
   await assertNoErrors(tabA, tabB);
 }
 
+async function runSceneBlocking(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+  // Both tabs must animate — hidden headless tabs freeze their animation
+  // clocks, which would freeze their scene queues (and with ticket 24's
+  // blocking, their hands) forever.
+  await tabA.bringToFront();
+  await tabB.bringToFront();
+  await tabA.bringToFront();
+
+  // 1. Blocking: catch a scene mid-flight in a live round. While it plays,
+  //    neither tab has a clickable hand; after the drain the turn holder's
+  //    hand is enabled again. (A caught play can end the round a frame later
+  //    — retry for a scene that leaves a live round behind it.)
+  let turnTab: CdpSession | null = null;
+  for (let attempt = 0; attempt < 10 && turnTab === null; attempt++) {
+    await playUntil(
+      [tabA, tabB],
+      async () => {
+        const sceneActive = (await tabA.eval(`document.querySelectorAll('.scenes .scene').length > 0`)) as boolean;
+        const roundLive = (await tabA.eval(
+          `document.querySelector('.round-over') === null && document.querySelector('.match-over') === null`,
+        )) as boolean;
+        return sceneActive && roundLive;
+      },
+      1200,
+    );
+    for (const t of [tabA, tabB]) {
+      assert.equal(
+        await t.eval(`document.querySelectorAll('button.card.playable').length`),
+        0,
+        'hand is disabled while a scene plays',
+      );
+    }
+    // Both queues must drain — the caught scene plays on both clients, and
+    // the turn holder could be either tab.
+    for (const t of [tabA, tabB]) {
+      await waitFor(t, `document.querySelectorAll('.scenes .scene').length === 0`, 25000, 'scenes drain');
+    }
+    for (const t of [tabA, tabB]) {
+      if (await t.eval(`document.querySelector('.seat.turn.me') !== null`)) turnTab = t;
+    }
+  }
+  assert.ok(turnTab !== null, 'a seat holds the turn after the drain');
+  assert.ok(
+    (await turnTab.eval(`document.querySelectorAll('button.card.playable').length`)) > 0,
+    'hand is enabled again after the scene drains',
+  );
+
+  // 2. Strip follows the scene: the win line appears only at the win moment.
+  //    Ticket 24's blocking pauses the round ~3s per move, so play the early
+  //    rounds with motion off (nothing enqueues, nothing blocks — fast), and
+  //    switch animations on when a player reaches 6/7 tokens: the next round
+  //    ends the match and plays the final scene + win banner. Poll the win
+  //    transition — while the final scene (a non-banner head) plays, the
+  //    strip must NOT show the win line; when the win banner plays, it must.
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+  await playUntil(
+    [tabA, tabB],
+    () => tabA.eval(
+      `[...document.querySelectorAll('.scoreboard .tokens')].some((t) => t.textContent.includes('6 / 7'))`,
+    ),
+    5000,
+  );
+  await tabA.setReducedMotion(false);
+  await tabB.setReducedMotion(false);
+  // The media emulation propagates async — settle so the final round's first
+  // move already enqueues scenes (the win banner must exist to be caught).
+  await sleep(400);
+  await playUntil(
+    [tabA, tabB],
+    () => tabA.eval(`document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null`),
+    5000,
+  );
+  let sawPreBanner = false;
+  let sawBanner = false;
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline && (!sawPreBanner || !sawBanner)) {
+    const banner = (await tabA.eval(`document.querySelector('.scene-banner') !== null`)) as boolean;
+    const winRe = /won the (round|match)/;
+    const strip = (await tabA.eval(`document.querySelector('.log-strip-text')?.textContent ?? ''`)) as string;
+    const hasWin = winRe.test(strip);
+    if (banner) {
+      assert.equal(hasWin, true, 'the win line shows while the win banner plays');
+      sawBanner = true;
+    } else {
+      const sceneActive = (await tabA.eval(`document.querySelectorAll('.scenes .scene').length > 0`)) as boolean;
+      if (sceneActive) {
+        assert.equal(hasWin, false, 'the win line never races ahead of the final scene');
+        sawPreBanner = true;
+      }
+    }
+    await sleep(50);
+  }
+  assert.ok(sawBanner, 'the win banner was caught');
+  assert.ok(sawPreBanner, 'the pre-banner final scene was caught — the strip does not race ahead');
+  await assertNoErrors(tabA, tabB);
+
+  // 3. Reduced motion: nothing enqueues, so the round never blocks. Play a
+  //    full round under reduced motion, asserting every step that no scene
+  //    exists — if a move were ever blocked, the round could not end.
+  //    (If phase 2 ended the match, start a rematch first.)
+  if (await tabA.eval(`document.querySelector('.match-over') !== null`)) {
+    await click(tabA, '.match-over button');
+    await waitFor(tabA, `document.querySelector('.screen.game .round-over') === null`, 10000, 'rematch starts');
+  }
+  // Toggle motion off first — the wait below doubles as the media-emulation
+  // propagation delay, so the first move of the loop cannot enqueue a scene.
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+  // Phase 2's queue may still be draining — let it finish before the checks.
+  await waitFor(tabA, `document.querySelectorAll('.scenes .scene').length === 0`, 20000, 'phase-2 queue drains');
+  const logBefore = (await logText(tabA)) as string;
+  for (let step = 0; step < 2000; step++) {
+    if (await tabA.eval(`document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null`)) break;
+    assert.equal(
+      await tabA.eval(`document.querySelectorAll('.scenes .scene').length`),
+      0,
+      'no scenes under prefers-reduced-motion',
+    );
+    let acted = false;
+    for (const t of [tabA, tabB]) {
+      if (await playOneMove(t)) {
+        acted = true;
+        break;
+      }
+    }
+    if (!acted) await sleep(80);
+  }
+  assert.ok(
+    await tabA.eval(`document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null`),
+    'a round ends under reduced motion — moves were never blocked',
+  );
+  assert.notEqual((await logText(tabA)) as string, logBefore, 'moves happened under reduced motion');
+  await assertNoErrors(tabA, tabB);
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 2 — full 2-player match to the 7-token target + rematch
 // ---------------------------------------------------------------------------
@@ -572,6 +719,12 @@ async function runSceneAnimations(base: string, debugPort: number): Promise<void
 async function runFullMatch(base: string, debugPort: number): Promise<void> {
   const [tabA, tabB] = await openTabs(debugPort, 2);
   await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+  // Ticket 24: scenes pause the round ~2.5s per move; a match would pay that
+  // on every play. This scenario asserts log/token/rematch facts, not
+  // animations, so play with motion off (nothing enqueues, nothing blocks).
+  // Animation behavior is the sceneAnimations and sceneBlocking scenarios' job.
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
 
   // A 2-player round only deals a few cards when it ends by early elimination,
   // so the single-copy ranks (King/Countess/Princess) can skip a whole match.
@@ -634,6 +787,11 @@ async function runMultiPlayer(base: string, debugPort: number): Promise<void> {
   for (const { capacity, names, target } of cases) {
     const tabs = await openTabs(debugPort, capacity);
     await openRoom(base, tabs, capacity, names);
+    // Ticket 24: scenes pause the round ~2.5s per move; this scenario asserts
+    // token targets, not animations, so play with motion off (nothing
+    // enqueues, nothing blocks). Animation behavior is the sceneAnimations
+    // and sceneBlocking scenarios' job.
+    for (const t of tabs) await t.setReducedMotion(true);
     assert.equal(
       await tabs[0]!.eval(`document.querySelectorAll('.scoreboard .seat').length`),
       capacity,
@@ -728,6 +886,8 @@ async function main(): Promise<void> {
     await runLogStrip(base, debugPort);
     console.log('[ui-smoke] scene-based card animations (ticket 23)…');
     await runSceneAnimations(base, debugPort);
+    console.log('[ui-smoke] strip follows the scene, the round waits (ticket 24)…');
+    await runSceneBlocking(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');
     await runFullMatch(base, debugPort);
     console.log('[ui-smoke] 3- and 4-player matches…');
@@ -737,7 +897,8 @@ async function main(): Promise<void> {
 
     console.log(
       'UI SMOKE OK — narrow-phone layout, render claims, full 2p match (all 8 cards) + rematch, '
-      + '3p/4p token targets, reload/resume with chat restored, no error banners anywhere',
+      + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), reload/resume with chat '
+      + 'restored, no error banners anywhere',
     );  } finally {
     if (chrome) {
       chrome.kill();

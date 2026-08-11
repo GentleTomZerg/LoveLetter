@@ -91,6 +91,8 @@ export interface Scene {
   /** The verdict caption for the effect beat — every scene now carries one
    *  (ticket 26: the verdict arrives as data, never inferred). */
   verdict?: SceneCaption;
+  /** The log entry this scene narrates — the strip follows it (ticket 24). */
+  entryId?: number;
 }
 
 /** A round/match win — a centered banner that always follows the final scene. */
@@ -98,6 +100,8 @@ export interface Banner {
   kind: 'banner';
   key: string;
   text: string;
+  /** The round/match entry the banner narrates — the strip follows it (ticket 24). */
+  entryId?: number;
 }
 
 export type SceneOrBanner = Scene | Banner;
@@ -193,6 +197,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
           } else {
             const scene: Scene = {
               key: nextKey(),
+              entryId: entry.id,
               kind: 'simple',
               actorId: playerId,
               playedRank: entryRank,
@@ -211,6 +216,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
         if (pending !== null) {
           const scene: Scene = {
             key: nextKey(),
+            entryId: entry.id,
             kind: 'simple',
             actorId: pending.actorId,
             playedRank: pending.playedRank,
@@ -222,6 +228,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
         } else if (playerId !== undefined && entryRank !== undefined) {
           const scene: Scene = {
             key: nextKey(),
+            entryId: entry.id,
             kind: 'simple',
             actorId: playerId,
             playedRank: entryRank,
@@ -262,6 +269,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
           pending = null;
           const scene: Scene = {
             key: nextKey(),
+            entryId: entry.id,
             kind: 'king',
             actorId: playerId,
             targetId,
@@ -289,7 +297,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
         const played = pending !== null && pending.kind === 'peek' ? pending.playedRank : lastPlayed[playerId];
         if (played === undefined) break;
         pending = null;
-        const scene: Scene = { key: nextKey(), kind: 'peek', actorId: playerId, targetId, playedRank: played };
+        const scene: Scene = { key: nextKey(), entryId: entry.id, kind: 'peek', actorId: playerId, targetId, playedRank: played };
         // The peeker's own stream carries the card — the self verdict; a
         // viewer without it sees the peek happen with no card.
         scene.verdict =
@@ -311,6 +319,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
         ) {
           const scene: Scene = {
             key: nextKey(),
+            entryId: entry.id,
             kind: 'guard',
             actorId: pending.actorId,
             targetId,
@@ -337,6 +346,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
         ) {
           const scene: Scene = {
             key: nextKey(),
+            entryId: entry.id,
             kind: 'baron',
             actorId: pending.actorId,
             targetId,
@@ -363,6 +373,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
           if (pending.kind === 'guard' && target !== undefined && playerId === target) {
             const scene: Scene = {
               key: nextKey(),
+              entryId: entry.id,
               kind: 'guard',
               actorId: pending.actorId,
               targetId: target,
@@ -382,6 +393,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
             const backfire = playerId === pending.actorId;
             const scene: Scene = {
               key: nextKey(),
+              entryId: entry.id,
               kind: 'baron',
               actorId: pending.actorId,
               targetId: target,
@@ -411,7 +423,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
         if (endsRound) break; // the deck-empty round end — the banner is the beat
         if (playerId !== undefined && entryRank !== undefined) {
           // A fold or leave reveals the player's hand — a standalone flash.
-          const scene: Scene = { key: nextKey(), kind: 'reveal', actorId: playerId, playedRank: entryRank };
+          const scene: Scene = { key: nextKey(), entryId: entry.id, kind: 'reveal', actorId: playerId, playedRank: entryRank };
           scenes.push(scene);
           open = scene;
         }
@@ -431,6 +443,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
             // The Prince's target discards — this decides the prince verdict.
             const scene: Scene = {
               key: nextKey(),
+              entryId: entry.id,
               kind: 'prince',
               actorId: pending.actorId,
               targetId: target,
@@ -451,6 +464,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
           // mini-scene; any stray discard (defensive) flies the same way.
           const scene: Scene = {
             key: nextKey(),
+            entryId: entry.id,
             kind: 'simple',
             actorId: playerId,
             playedRank: entryRank,
@@ -469,7 +483,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
       case 'match':
         closeOpen();
         pending = null;
-        scenes.push({ key: nextKey(), kind: 'banner', text: fmt(entry) });
+        scenes.push({ key: nextKey(), entryId: entry.id, kind: 'banner', text: fmt(entry) });
         break;
 
       case 'info':

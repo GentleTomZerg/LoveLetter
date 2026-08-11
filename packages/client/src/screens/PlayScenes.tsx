@@ -20,9 +20,14 @@
  * disables all scenes — the top bar text carries the moment, as before.
  * Seats never fly — elimination dims the seat through the existing
  * out-state transition (CSS).
+ *
+ * Ticket 24 lifts the queue into `usePlayScenes` so the Game screen can
+ * block the hand/choice while a scene plays and let the log strip follow
+ * the currently-animating beat; this component is the pure stage sequencer
+ * for that shared queue.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { LogEntry, Rank } from '@love-letter/core';
 import { useLocale } from '../i18n';
@@ -309,7 +314,32 @@ function BannerView({ banner, onDone }: { banner: Banner; onDone: () => void }) 
   );
 }
 
-export function PlayScenes({ log, selfId, roster }: { log: LogEntry[]; selfId: string; roster: Record<string, string> }) {
+/**
+ * The scene queue shared with the Game screen (ticket 24): the head is the
+ * currently-animating beat. `busy` blocks the hand and choice buttons while
+ * a scene plays; `currentEntry` is the log entry the head scene narrates,
+ * which the top strip follows so it never races ahead of the animation.
+ */
+export interface PlayScenesApi {
+  queue: SceneOrBanner[];
+  busy: boolean;
+  currentEntry: LogEntry | undefined;
+  /** Drain the head scene — key-filter is idempotent, so a late drain can
+   *  never skip the next scene. */
+  advance: (key: string) => void;
+}
+
+/**
+ * Drive the scene queue from the live log (ticket 23 + 26). The mount
+ * baseline skips the replayed history; prefers-reduced-motion enqueues
+ * nothing, so `busy` stays false and the strip keeps showing the latest
+ * entry — exactly as before.
+ */
+export function usePlayScenes(
+  log: LogEntry[],
+  selfId: string,
+  roster: Record<string, string>,
+): PlayScenesApi {
   const { t, cardName } = useLocale();
   const [queue, setQueue] = useState<SceneOrBanner[]>([]);
   const stateRef = useRef<SceneState>(initialSceneState());
@@ -333,13 +363,20 @@ export function PlayScenes({ log, selfId, roster }: { log: LogEntry[]; selfId: s
     if (added.scenes.length > 0) setQueue((q) => [...q, ...added.scenes]);
   }, [log]);
 
-  // Only the head plays at a time; filter-by-key is idempotent, so a late
-  // scene drain can never skip the next one. Every resolution now completes
-  // with an explicit event (ticket 26), so no sweep ever drains without a
-  // verdict behind it — there is nothing to force.
-  const advance = (key: string) => {
+  const advance = useCallback((key: string) => {
     setQueue((q) => q.filter((m) => m.key !== key));
-  };
+  }, []);
+
+  const head = queue[0] ?? null;
+  const currentEntry =
+    head !== null && head.entryId !== undefined ? log.find((e) => e.id === head.entryId) : undefined;
+
+  return { queue, busy: queue.length > 0, currentEntry, advance };
+}
+
+export function PlayScenes({ scenes, selfId, roster }: { scenes: PlayScenesApi; selfId: string; roster: Record<string, string> }) {
+  const { t, cardName } = useLocale();
+  const { queue, advance } = scenes;
   const head = queue[0] ?? null;
 
   return (
