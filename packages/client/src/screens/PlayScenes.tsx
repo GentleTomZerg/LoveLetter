@@ -48,7 +48,7 @@ const CARD_W = 4; // rem — .scene-flash width
 const CARD_H = CARD_W * 1.5;
 
 function seatEl(id: string): HTMLElement | null {
-  return document.querySelector(`.scoreboard .seat[data-player-id="${CSS.escape(id)}"]`);
+  return document.querySelector(`.tabletop .seat[data-player-id="${CSS.escape(id)}"]`);
 }
 
 /** Layer-relative rect of an element — the .scenes overlay is the origin. */
@@ -61,7 +61,7 @@ function layerRect(el: Element): DOMRect {
 
 /** The destination rect for a fly: the target's seat, or its discard pile. */
 function destRect(id: string, pile: boolean): { x: number; y: number } | null {
-  const el = pile ? document.querySelector(`.scoreboard .seat[data-player-id="${CSS.escape(id)}"] .pile img`) ?? seatEl(id) : seatEl(id);
+  const el = pile ? document.querySelector(`.tabletop .seat[data-player-id="${CSS.escape(id)}"] .pile img`) ?? seatEl(id) : seatEl(id);
   if (el === null) return null;
   const r = layerRect(el);
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };

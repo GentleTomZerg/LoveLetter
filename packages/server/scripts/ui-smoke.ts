@@ -2,7 +2,7 @@
  * UI smoke + playtest (tickets 06 + 07): drives the real client in headless
  * Chrome over CDP. Scenarios:
  *
- *  - render     Home → Lobby → Game, scoreboard, discard piles, chat across
+ *  - render     Home → Lobby → Game, seats ring + discard piles, chat across
  *               tabs (ticket 06 render claims; screenshots saved for a look).
  *  - chatPill   chat is a floating pill + modal dialog (ticket 20): newest-
  *               message preview, unread badge that clears on open, close on
@@ -27,11 +27,16 @@
  *               scoreboard counts at every turn-holder moment, around King
  *               trades (the fixed desync left a stale card after a trade
  *               against an empty hand — clicking it bounced an error).
- *  - logStrip   the log is a top bar fixed at the top of the viewport (issue
- *               21) collapsing to a latest-event strip and expanding in place
+ *  - logStrip   the log is a strip in the merged top bar (ticket 33,
+ *               reworking issue 21) collapsing to a latest-event strip
  *               (ticket 19): the strip shows the newest entry, tracks live
- *               play, keeps its thumbnail rank-keyed; the expanded history is
- *               near-fullscreen on phones.
+ *               play, keeps its thumbnail rank-keyed; tapping opens the
+ *               full-log modal, near-fullscreen on phones.
+ *  - fixedStage  ticket 33: the fixed stage — zero-scroll (100dvh, overflow
+ *               hidden, all stage elements inside the viewport), the ring
+ *               seats + center-table cards rank-keyed, the log modal and the
+ *               round-end overlay open/close, a scene plays fully visible,
+ *               and a narrow landscape viewport shows the rotate notice.
  *  - fullMatch  a complete 2-player match to the 7-token target: all eight
  *               cards appear in the public log, match end, rematch resets.
  *  - multiPlayer 3- and 4-player matches start, play, and end at the right
@@ -124,9 +129,12 @@ async function assertNoErrors(...tabs: CdpSession[]): Promise<void> {
  *  Ticket 25: the hand is select-confirm — clicking a card only selects it,
  *  so the confirm bar click must follow in the same step (the play leaves
  *  only after the confirm; a selected-but-unconfirmed card would be
- *  deselected by the next hand click). */
-async function playOneMove(tab: CdpSession): Promise<boolean> {
-  if (await click(tab, '.round-over button')) return true; // start next round
+ *  deselected by the next hand click).
+ *
+ *  Ticket 33: `skipRoundOver` stops the auto-"Start next round" click so a
+ *  scenario can observe the round-end overlay before it is consumed. */
+async function playOneMove(tab: CdpSession, skipRoundOver = false): Promise<boolean> {
+  if (!skipRoundOver && (await click(tab, '.round-over button'))) return true; // start next round
   if (await click(tab, 'button.card.playable')) {
     if (await click(tab, '.play-confirm')) return true; // select + confirm
     await click(tab, 'button.card.playable.selected'); // no bar — deselect and retry
@@ -156,7 +164,13 @@ async function playUntil(tabs: CdpSession[], done: () => Promise<boolean>, maxSt
 
 /** Create a room from `tabs[0]` and join the rest by its code. */
 async function openRoom(base: string, tabs: CdpSession[], capacity: number, names: string[]): Promise<string> {
-  for (let i = 0; i < tabs.length; i++) await tabs[i]!.navigate(base);
+  // Ticket 33: the stage is portrait-locked, so the smoke runs at a real
+  // desktop size (headless Chrome's default 780×493 is a narrow landscape
+  // and would correctly hide the stage behind the rotate notice).
+  for (let i = 0; i < tabs.length; i++) {
+    await tabs[i]!.setViewport(1280, 800);
+    await tabs[i]!.navigate(base);
+  }
   await waitFor(tabs[0]!, `document.querySelector('.screen.home') !== null`, 10000, 'Home on tab 0');
   await setInput(tabs[0]!, '.home input[placeholder="e.g. Alice"]', names[0]!);
   await setSelect(tabs[0]!, '.home select', String(capacity));
@@ -180,7 +194,7 @@ async function openRoom(base: string, tabs: CdpSession[], capacity: number, name
 
 const nonEmptyPiles = (tab: CdpSession) =>
   tab.eval(
-    `[...document.querySelectorAll('.scoreboard .seat .pile')].filter((p) => p.querySelectorAll('img').length > 0).length`,
+    `[...document.querySelectorAll('.tabletop .seat .pile')].filter((p) => p.querySelectorAll('img').length > 0).length`,
   );
 
 const logText = (tab: CdpSession) =>
@@ -189,10 +203,10 @@ const logText = (tab: CdpSession) =>
 /** The public table state a resumed tab must reproduce exactly. */
 const publicSnapshot = (tab: CdpSession) =>
   tab.eval(`({
-    discards: [...document.querySelectorAll('.scoreboard .seat .pile img')].map((i) => i.getAttribute('src')),
-    hands: [...document.querySelectorAll('.scoreboard .seat .hand-count')].map((t) => t.textContent),
-    tokens: [...document.querySelectorAll('.scoreboard .tokens')].map((t) => t.textContent),
-    header: [...document.querySelectorAll('.game-header span')].map((s) => s.textContent),
+    discards: [...document.querySelectorAll('.tabletop .seat .pile img')].map((i) => i.getAttribute('src')),
+    hands: [...document.querySelectorAll('.tabletop .seat .hand-count')].map((t) => t.textContent),
+    tokens: [...document.querySelectorAll('.tabletop .tokens')].map((t) => t.textContent),
+    header: [...document.querySelectorAll('.top-meta span')].map((s) => s.textContent),
   })`);
 
 // ---------------------------------------------------------------------------
@@ -260,23 +274,23 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
   const [tabA, tabB] = await openTabs(debugPort, 2);
   await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
 
-  assert.equal(await tabA.eval(`document.querySelectorAll('.scoreboard .seat').length`), 2, 'two scoreboard seats');
+  assert.equal(await tabA.eval(`document.querySelectorAll('.tabletop .seat').length`), 2, 'two ring seats');
   assert.equal(
-    await tabA.eval(`document.querySelectorAll('.scoreboard .seat')[0].textContent.includes('turn')`),
+    await tabA.eval(`document.querySelectorAll('.tabletop .seat')[0].textContent.includes('turn')`),
     true,
     'turn badge on the first seat',
   );
 
-  // Issue 14: the active player's row is highlighted with a pill — exactly
-  // one seat is marked at round start — and the row internals never reuse
-  // the bare `.hand` class (it would inherit the table-hand min-height).
+  // Issue 14: the active player's tile is highlighted with a pill — exactly
+  // one seat is marked at round start — and the tile internals never reuse
+  // the bare `.hand` class (it would inherit the hand-dock min-height).
   assert.equal(
-    await tabA.eval(`document.querySelectorAll('.scoreboard .seat.turn').length`),
+    await tabA.eval(`document.querySelectorAll('.tabletop .seat.turn').length`),
     1,
     'exactly one seat is the current turn',
   );
   assert.equal(
-    await tabA.eval(`document.querySelectorAll('.scoreboard .seat .hand').length`),
+    await tabA.eval(`document.querySelectorAll('.tabletop .seat .hand').length`),
     0,
     'no bare .hand class inside seats',
   );
@@ -292,9 +306,18 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
     'all eight cards listed',
   );
 
-  await playUntil([tabA, tabB], async () => (await nonEmptyPiles(tabA)) >= 2, 600);
+  // Ticket 33: the round-end overlay resets the piles on "Start next round",
+  // so a round that ends exactly when the second pile lands could race the
+  // snapshot — require a live round (no overlay) for a stable read.
+  await playUntil(
+    [tabA, tabB],
+    async () =>
+      (await nonEmptyPiles(tabA)) >= 2
+      && (await tabA.eval(`document.querySelector('.round-over') === null`)),
+    600,
+  );
   const pileImgs = (await tabA.eval(
-    `[...document.querySelectorAll('.scoreboard .seat .pile img')].map((i) => i.getAttribute('src'))`,
+    `[...document.querySelectorAll('.tabletop .seat .pile img')].map((i) => i.getAttribute('src'))`,
   )) as string[];
   assert.ok(pileImgs.length >= 2, 'discard piles show card images');
   assert.ok(pileImgs.every((src) => /^\/cards\/[1-8]\.png$/.test(src)), `discard images are rank-keyed: ${pileImgs}`);
@@ -302,7 +325,7 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
   // Issue 13: every seat shows a public hand count; once anyone has played,
   // at least one seat holds cards represented by face-down backs.
   const handCounts = (await tabA.eval(
-    `[...document.querySelectorAll('.scoreboard .seat .hand-count')].map((t) => t.textContent)`,
+    `[...document.querySelectorAll('.tabletop .seat .hand-count')].map((t) => t.textContent)`,
   )) as string[];
   assert.equal(handCounts.length, 2, 'both seats show a hand count');
   assert.ok(
@@ -311,7 +334,7 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
   );
   const totalHeld = handCounts.reduce((sum, c) => sum + Number(c), 0);
   assert.equal(
-    await tabA.eval(`document.querySelectorAll('.scoreboard .seat .hand-back').length`),
+    await tabA.eval(`document.querySelectorAll('.tabletop .seat .hand-back').length`),
     totalHeld,
     'face-down backs equal the total cards held',
   );
@@ -354,30 +377,28 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1b — tickets 19 + 21: the log is a top bar fixed at the top of the
-// viewport (visible without scrolling), collapsing to the latest-event strip
-// and expanding to the full newest-first history in a panel beneath it —
-// near-fullscreen on phones. The strip shows the newest entry (with a
-// rank-keyed mini thumbnail when it carries a rank) and tracks live play.
+// Scenario 1b — tickets 19 + 21 + 33: the log is a latest-event strip in the
+// merged top bar (tappable → the full-log modal; near-fullscreen on phones).
+// The strip shows the newest entry (with a rank-keyed mini thumbnail when it
+// carries a rank) and tracks live play.
 // ---------------------------------------------------------------------------
 
 async function runLogStrip(base: string, debugPort: number): Promise<void> {
   const [tabA, tabB] = await openTabs(debugPort, 2);
   await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
 
-  // Issue 21: the bar is pinned to the top of the viewport, and the game
-  // content sits below it — the log is visible without scrolling.
+  // Ticket 33: the strip lives in the merged top bar, pinned to the top of
+  // the viewport — visible without scrolling (the stage never scrolls).
   const pinned = (await tabA.eval(`(() => {
-    const panel = document.querySelector('.log-panel');
-    const header = document.querySelector('.game-header');
-    if (panel === null || header === null) return null;
-    const pr = panel.getBoundingClientRect();
-    const hr = header.getBoundingClientRect();
-    return { top: pr.top, headerTop: hr.top, barH: pr.height };
-  })()`)) as { top: number; headerTop: number; barH: number } | null;
-  assert.ok(pinned !== null, 'log panel and game header present');
-  assert.equal(pinned!.top, 0, 'log bar is fixed at the top of the viewport');
-  assert.ok(pinned!.headerTop >= pinned!.barH, 'game content clears the log bar');
+    const bar = document.querySelector('.stage-top');
+    const strip = document.querySelector('.log-strip');
+    if (bar === null || strip === null) return null;
+    const br = bar.getBoundingClientRect();
+    return { top: br.top, stripInBar: bar.contains(strip) };
+  })()`)) as { top: number; stripInBar: boolean } | null;
+  assert.ok(pinned !== null, 'top bar and log strip present');
+  assert.equal(pinned!.top, 0, 'the merged top bar is at the top of the viewport');
+  assert.equal(pinned!.stripInBar, true, 'the log strip lives in the top bar');
 
   // Some real play so the log has entries (a play line carries a rank).
   await playUntil([tabA, tabB], async () => (await nonEmptyPiles(tabA)) >= 2, 600);
@@ -386,54 +407,60 @@ async function runLogStrip(base: string, debugPort: number): Promise<void> {
   // newest-entry snapshot must wait for the queue to drain first.
   await waitFor(tabA, `document.querySelectorAll('.scenes .scene').length === 0`, 20000, 'scenes idle before the strip snapshot');
 
-  // One atomic snapshot: the strip and the top of the expanded list must show
-  // the same entry, and any thumbnail must stay rank-keyed (never a card name).
+  // One atomic snapshot: the strip and the top of the modal list must show
+  // the same entry, and any thumbnail must stay rank-keyed (never a name).
   const snap = (await tabA.eval(`(() => {
     const strip = document.querySelector('.log-strip-text')?.textContent ?? null;
     const first = document.querySelector('.log li')?.textContent ?? null;
     const thumb = document.querySelector('.log-strip img.log-thumb')?.getAttribute('src') ?? null;
-    const open = document.querySelector('.log-panel')?.open ?? null;
+    const open = document.querySelector('.log-modal')?.classList.contains('open') ?? null;
     return { strip, first, thumb, open };
   })()`)) as { strip: string | null; first: string | null; thumb: string | null; open: boolean | null };
   assert.ok(snap.strip !== null && snap.strip.length > 0, 'strip shows a latest event');
-  assert.equal(snap.strip, snap.first, 'strip shows the newest entry — the top of the expanded list');
-  assert.equal(snap.open, false, 'log panel starts collapsed');
+  assert.equal(snap.strip, snap.first, 'strip shows the newest entry — the top of the modal list');
+  assert.equal(snap.open, false, 'log modal starts closed');
   assert.ok(
     snap.thumb === null || /^\/cards\/[1-8]\.png$/.test(snap.thumb),
     `strip thumbnail is rank-keyed: ${snap.thumb}`,
   );
 
-  // Click expands in place (`<details>`, the Abilities pattern): the full
-  // list becomes visible with its scroll height; clicking again collapses.
+  // Tapping the strip opens the modal (ticket 33 — no more in-place
+  // <details> expansion); the full list is visible; Esc and outside click
+  // close it.
   await click(tabA, '.log-strip');
-  await waitFor(tabA, `document.querySelector('.log-panel').open === true`, 5000, 'log panel opens');
+  await waitFor(tabA, `document.querySelector('.log-modal').classList.contains('open') === true`, 5000, 'log modal opens');
   const visible = (await tabA.eval(`(() => {
-    const el = document.querySelector('.log-panel .log');
-    return el !== null && el.getBoundingClientRect().height > 0;
+    const el = document.querySelector('.log-dialog .log');
+    const modal = document.querySelector('.log-modal');
+    return el !== null && modal !== null && getComputedStyle(modal).display !== 'none' && el.getBoundingClientRect().height > 0;
   })()`)) as boolean;
-  assert.equal(visible, true, 'expanded log is visible in place');
+  assert.equal(visible, true, 'the modal history is visible when open');
   assert.ok(
     (await tabA.eval(`document.querySelectorAll('.log li').length`)) > 0,
-    'expanded log lists the history',
+    'the modal lists the history',
   );
+  await tabA.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  await waitFor(tabA, `document.querySelector('.log-modal').classList.contains('open') === false`, 5000, 'log modal closes on Esc');
   await click(tabA, '.log-strip');
-  await waitFor(tabA, `document.querySelector('.log-panel').open === false`, 5000, 'log panel collapses');
+  await waitFor(tabA, `document.querySelector('.log-modal').classList.contains('open') === true`, 5000, 'log modal reopens');
+  await click(tabA, '.log-modal');
+  await waitFor(tabA, `document.querySelector('.log-modal').classList.contains('open') === false`, 5000, 'log modal closes on outside click');
 
-  // Issue 21, phones: the expanded history is near-fullscreen — the bar stays
-  // on top as the toggle and the list fills the rest of the viewport.
+  // Ticket 33, phones: the modal dialog fills the viewport (the chat
+  // precedent) — the list gets all the room.
   await tabA.setViewport(375, 812);
   await click(tabA, '.log-strip');
-  await waitFor(tabA, `document.querySelector('.log-panel').open === true`, 5000, 'log panel opens at phone width');
+  await waitFor(tabA, `document.querySelector('.log-modal').classList.contains('open') === true`, 5000, 'log modal opens at phone width');
   const fills = (await tabA.eval(`(() => {
-    const pr = document.querySelector('.log-panel').getBoundingClientRect();
-    const log = document.querySelector('.log-panel .log');
-    return { top: pr.top, bottom: pr.bottom, vh: window.innerHeight, logH: log?.getBoundingClientRect().height ?? 0 };
-  })()`)) as { top: number; bottom: number; vh: number; logH: number };
-  assert.equal(fills.top, 0, 'bar still at the top on phones');
-  assert.ok(fills.bottom >= fills.vh - 1, 'expanded panel reaches the viewport bottom (near-fullscreen)');
-  assert.ok(fills.logH > 0, 'expanded list visible at phone width');
-  await click(tabA, '.log-strip');
-  await waitFor(tabA, `document.querySelector('.log-panel').open === false`, 5000, 'log panel collapses at phone width');
+    const r = document.querySelector('.log-dialog').getBoundingClientRect();
+    return { w: r.width, h: r.height, vw: window.innerWidth, vh: window.innerHeight };
+  })()`)) as { w: number; h: number; vw: number; vh: number };
+  assert.ok(
+    fills.w >= fills.vw - 1 && fills.h >= fills.vh - 1,
+    `log dialog near-fullscreen at phone size: ${JSON.stringify(fills)}`,
+  );
+  await tabA.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  await waitFor(tabA, `document.querySelector('.log-modal').classList.contains('open') === false`, 5000, 'log modal closes at phone width');
 
   // The strip tracks live play: one more move must change the newest entry.
   const before = (await tabA.eval(`document.querySelector('.log-strip-text')?.textContent ?? null`)) as string | null;
@@ -443,6 +470,170 @@ async function runLogStrip(base: string, debugPort: number): Promise<void> {
     600,
   );
   await assertNoErrors(tabA, tabB);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 1d — ticket 33: the fixed stage. Desktop has no scroll — the
+// stage fills the viewport (`100dvh`, overflow hidden) and every stage
+// element (top bar, dock, ring seats, center table) stays inside it; the
+// ring seats and center-table cards render rank-keyed; the log modal and
+// the round-end overlay open/close; a scene plays fully visible; a narrow
+// landscape viewport shows the rotate notice instead of the stage.
+// ---------------------------------------------------------------------------
+
+async function runFixedStage(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+
+  // 1. Zero-scroll: the stage is 100dvh with overflow hidden; the document
+  //    never scrolls; every stage element is inside the viewport.
+  const stage = (await tabA.eval(`(() => {
+    const s = document.querySelector('.screen.game');
+    if (s === null) return null;
+    const r = s.getBoundingClientRect();
+    return {
+      top: r.top,
+      bottom: r.bottom,
+      vh: window.innerHeight,
+      overflow: getComputedStyle(s).overflow,
+      rootScrollH: document.documentElement.scrollHeight,
+      rootClientH: document.documentElement.clientHeight,
+    };
+  })()`)) as { top: number; bottom: number; vh: number; overflow: string; rootScrollH: number; rootClientH: number } | null;
+  assert.ok(stage !== null, 'game stage present');
+  assert.equal(stage!.top, 0, 'stage starts at the top of the viewport');
+  assert.equal(stage!.bottom, stage!.vh, 'stage fills the viewport (100dvh)');
+  assert.equal(stage!.overflow, 'hidden', 'the stage clips its own content');
+  assert.ok(stage!.rootScrollH <= stage!.rootClientH + 1, 'the document has no scroll');
+
+  const inside = (await tabA.eval(`(() => {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    return [...document.querySelectorAll('.stage-top, .stage-bottom, .tabletop .seat, .center-table')]
+      .every((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= -0.5 && r.bottom <= vh + 0.5 && r.left >= -0.5 && r.right <= vw + 0.5;
+      });
+  })()`)) as boolean;
+  assert.equal(inside, true, 'the top bar, dock, ring seats, and center table are all inside the viewport');
+
+  // 2. The ring renders: two seats for a 2p duel, and every table image is
+  //    rank-keyed or a card back (never a display name).
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.tabletop .seat').length`),
+    2,
+    'two seats in the ring (2p duel)',
+  );
+  assert.equal(
+    await tabA.eval(`document.querySelector('.tabletop.duel') !== null`),
+    true,
+    'the ring is the duel layout for 2 players',
+  );
+  const tableSrcs = (await tabA.eval(
+    `[...document.querySelectorAll('.tabletop img')].map((i) => i.getAttribute('src'))`,
+  )) as string[];
+  assert.ok(
+    tableSrcs.every((src) => /^\/cards\/([1-8]|back-light)\.png$/.test(src)),
+    `ring and center-table images are rank-keyed: ${tableSrcs}`,
+  );
+
+  // 3. The log modal opens and closes (the strip lives in the top bar).
+  await click(tabA, '.log-strip');
+  await waitFor(tabA, `document.querySelector('.log-modal').classList.contains('open') === true`, 5000, 'log modal opens');
+  await click(tabA, '.log-modal .chat-close');
+  await waitFor(tabA, `document.querySelector('.log-modal').classList.contains('open') === false`, 5000, 'log modal closes');
+
+  // 3b. The Manual button in the top bar opens a modal (the full manual
+  //     lands in ticket 34; the current abilities content stands in) and
+  //     closes again.
+  await click(tabA, '.manual-button');
+  await waitFor(tabA, `document.querySelector('.manual-modal') !== null`, 5000, 'manual modal opens');
+  await click(tabA, '.manual-modal .chat-close');
+  await waitFor(tabA, `document.querySelector('.manual-modal') === null`, 5000, 'manual modal closes');
+
+  // 4. A scene plays fully visible — catch a fly mid-flight and assert its
+  //    whole box is on screen (the stage never carries the animation away).
+  //    Bring tabA to front so its animation clock actually runs.
+  await tabA.bringToFront();
+  await playUntil(
+    [tabA, tabB],
+    async () => {
+      const r = (await tabA.eval(`(() => {
+        const el = document.querySelector('.scenes .scene');
+        if (el === null) return null;
+        const b = el.getBoundingClientRect();
+        return {
+          inside: b.top >= -0.5 && b.bottom <= window.innerHeight + 0.5
+            && b.left >= -0.5 && b.right <= window.innerWidth + 0.5,
+        };
+      })()`)) as { inside: boolean } | null;
+      return r !== null && r.inside;
+    },
+    1200,
+  );
+
+  // 5. The round-end overlay opens (a centered card over the stage) and
+  //    closes via its "Start next round" button. Scenes pause the round
+  //    ~2.5s per move (ticket 24), so finish the round with motion off.
+  //    The overlay is observed before it is consumed: playOneMove's auto-
+  //    "Start next round" click would race the check (the roundStarted
+  //    event can land between the check and the click), so drive with the
+  //    click suppressed until the overlay is seen.
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+  let roundEnded = false;
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline && !roundEnded) {
+    if ((await tabA.eval(`document.querySelector('.round-over') !== null`)) as boolean) {
+      roundEnded = true;
+      break;
+    }
+    if (await click(tabA, '.match-over button')) continue; // a rematch mid-wait — keep going
+    let acted = false;
+    for (const t of [tabA, tabB]) {
+      if (await playOneMove(t, true)) {
+        acted = true;
+        break;
+      }
+    }
+    if (!acted) await sleep(80);
+  }
+  assert.ok(roundEnded, 'a round ended — the round-end overlay appears');
+  const overlay = (await tabA.eval(`(() => {
+    const ov = document.querySelector('.round-end-overlay');
+    const card = document.querySelector('.round-over');
+    if (ov === null || card === null) return null;
+    const or = ov.getBoundingClientRect();
+    const cr = card.getBoundingClientRect();
+    return {
+      display: getComputedStyle(ov).display,
+      coversStage: or.top <= 0.5 && or.bottom >= window.innerHeight - 0.5,
+      cardCentered: Math.abs(cr.top + cr.height / 2 - window.innerHeight / 2) < 150,
+    };
+  })()`)) as { display: string; coversStage: boolean; cardCentered: boolean } | null;
+  assert.ok(overlay !== null, 'round-end overlay present');
+  assert.notEqual(overlay!.display, 'none', 'round-end overlay is visible');
+  assert.equal(overlay!.coversStage, true, 'the overlay covers the stage');
+  assert.equal(overlay!.cardCentered, true, 'the round-end card is centered');
+  await click(tabA, '.round-over button');
+  await waitFor(tabA, `document.querySelector('.round-over') === null`, 10000, 'round-end overlay closes');
+
+  // 6. Portrait lock: a narrow landscape viewport shows the rotate notice
+  //    instead of the stage.
+  await tabA.setViewport(812, 375);
+  const locked = (await tabA.eval(`(() => {
+    const stage = document.querySelector('.screen.game');
+    const notice = document.querySelector('.rotate-notice');
+    return {
+      stageDisplay: stage !== null ? getComputedStyle(stage).display : null,
+      noticeDisplay: notice !== null ? getComputedStyle(notice).display : null,
+      noticeText: notice !== null ? notice.textContent?.trim() ?? '' : '',
+    };
+  })()`)) as { stageDisplay: string | null; noticeDisplay: string | null; noticeText: string };
+  assert.equal(locked.stageDisplay, 'none', 'the stage hides on a narrow landscape viewport');
+  assert.notEqual(locked.noticeDisplay, 'none', 'the rotate notice shows on a narrow landscape viewport');
+  assert.ok(locked.noticeText.length > 0, 'the rotate notice has text');
+  await assertNoErrors(tabA, tabB);
+  console.log('  fixed stage: zero-scroll, rank-keyed ring, log modal + round-end overlay, scene in view, portrait lock');
 }
 
 // ---------------------------------------------------------------------------
@@ -532,11 +723,11 @@ async function runChatPill(base: string, debugPort: number): Promise<void> {
   // Ticket 29: at phone size the dialog fills the viewport — no backdrop to
   // tap and no Esc key — so the explicit close button must exist and work.
   assert.equal(
-    await tabB.eval(`document.querySelector('.chat-close') !== null`),
+    await tabB.eval(`document.querySelector('.chat-dialog .chat-close') !== null`),
     true,
     'close button visible at phone width',
   );
-  await click(tabB, '.chat-close');
+  await click(tabB, '.chat-dialog .chat-close');
   await waitFor(tabB, `document.querySelector('.chat-dialog') === null`, 5000, 'dialog closes via the close button');
   await assertNoErrors(tabA, tabB);
 }
@@ -566,9 +757,9 @@ async function runDrawPop(base: string, debugPort: number): Promise<void> {
   )) as string | null;
   assert.ok(drawnSrc === null || /^\/cards\/[1-8]\.png$/.test(drawnSrc), `drawn card stays rank-keyed: ${drawnSrc}`);
   const header = (await tabA.eval(
-    `[...document.querySelectorAll('.game-header span')].map((s) => s.textContent).join(' | ')`,
+    `document.querySelector('.meta-deck')?.textContent ?? ''`,
   )) as string;
-  assert.ok(/Deck: \d+/.test(header), `deck count in the header: ${header}`);
+  assert.ok(/Deck: \d+/.test(header), `deck count in the top bar: ${header}`);
   await assertNoErrors(tabA, tabB);
   console.log('  draw pop: the drawn card pops in the hand (rank-keyed), deck count in step');
 }
@@ -697,7 +888,7 @@ async function runSceneBlocking(base: string, debugPort: number): Promise<void> 
   await playUntil(
     [tabA, tabB],
     () => tabA.eval(
-      `[...document.querySelectorAll('.scoreboard .tokens')].some((t) => t.textContent.includes('6 / 7'))`,
+      `[...document.querySelectorAll('.tabletop .tokens')].some((t) => t.textContent.includes('6 / 7'))`,
     ),
     5000,
   );
@@ -750,8 +941,14 @@ async function runSceneBlocking(base: string, debugPort: number): Promise<void> 
   // Phase 2's queue may still be draining — let it finish before the checks.
   await waitFor(tabA, `document.querySelectorAll('.scenes .scene').length === 0`, 20000, 'phase-2 queue drains');
   const logBefore = (await logText(tabA)) as string;
+  // The overlay is observed before it is consumed (playOneMove's auto-
+  // "Start next round" click would race the check — ticket 33's overlay).
+  let ended = false;
   for (let step = 0; step < 2000; step++) {
-    if (await tabA.eval(`document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null`)) break;
+    if (await tabA.eval(`document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null`)) {
+      ended = true;
+      break;
+    }
     assert.equal(
       await tabA.eval(`document.querySelectorAll('.scenes .scene').length`),
       0,
@@ -759,17 +956,14 @@ async function runSceneBlocking(base: string, debugPort: number): Promise<void> 
     );
     let acted = false;
     for (const t of [tabA, tabB]) {
-      if (await playOneMove(t)) {
+      if (await playOneMove(t, true)) {
         acted = true;
         break;
       }
     }
     if (!acted) await sleep(80);
   }
-  assert.ok(
-    await tabA.eval(`document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null`),
-    'a round ends under reduced motion — moves were never blocked',
-  );
+  assert.ok(ended, 'a round ends under reduced motion — moves were never blocked');
   assert.notEqual((await logText(tabA)) as string, logBefore, 'moves happened under reduced motion');
   await assertNoErrors(tabA, tabB);
 }
@@ -944,7 +1138,7 @@ async function runFullMatch(base: string, debugPort: number): Promise<void> {
     await playUntil([tabA, tabB], () => tabA.eval(`document.querySelector('.match-over') !== null`));
     assert.equal(await tabB.eval(`document.querySelector('.match-over') !== null`), true, 'match over on B too');
     const winnerTokens = (await tabA.eval(
-      `[...document.querySelectorAll('.scoreboard .tokens')].some((t) => t.textContent.includes('7 / 7'))`,
+      `[...document.querySelectorAll('.tabletop .tokens')].some((t) => t.textContent.includes('7 / 7'))`,
     )) as boolean;
     assert.equal(winnerTokens, true, 'the winner reached 7 / 7 tokens');
 
@@ -956,7 +1150,7 @@ async function runFullMatch(base: string, debugPort: number): Promise<void> {
       await waitFor(tabA, `document.querySelector('.log')?.textContent.includes('Rematch')`, 10000, 'rematch log line');
       await waitFor(
         tabA,
-        `[...document.querySelectorAll('.game-header span')].some((s) => s.textContent === 'Round 1')`,
+        `document.querySelector('.meta-round')?.textContent === 'Round 1'`,
         10000,
         'round 1 after rematch',
       );
@@ -973,12 +1167,12 @@ async function runFullMatch(base: string, debugPort: number): Promise<void> {
   await waitFor(tabA, `document.querySelector('.log')?.textContent.includes('Rematch')`, 10000, 'rematch log line');
   await waitFor(
     tabA,
-    `[...document.querySelectorAll('.game-header span')].some((s) => s.textContent === 'Round 1')`,
+    `document.querySelector('.meta-round')?.textContent === 'Round 1'`,
     10000,
     'round 1 after rematch',
   );
   const reset = (await tabA.eval(
-    `[...document.querySelectorAll('.scoreboard .tokens')].every((t) => t.textContent.includes('0 / 7'))`,
+    `[...document.querySelectorAll('.tabletop .tokens')].every((t) => t.textContent.includes('0 / 7'))`,
   )) as boolean;
   assert.equal(reset, true, 'tokens reset after rematch');
   await assertNoErrors(tabA, tabB);
@@ -1002,13 +1196,13 @@ async function runMultiPlayer(base: string, debugPort: number): Promise<void> {
     // and sceneBlocking scenarios' job.
     for (const t of tabs) await t.setReducedMotion(true);
     assert.equal(
-      await tabs[0]!.eval(`document.querySelectorAll('.scoreboard .seat').length`),
+      await tabs[0]!.eval(`document.querySelectorAll('.tabletop .seat').length`),
       capacity,
       `${capacity} seats filled`,
     );
     await playUntil(tabs, () => tabs[0]!.eval(`document.querySelector('.match-over') !== null`));
     const reached = (await tabs[0]!.eval(
-      `[...document.querySelectorAll('.scoreboard .tokens')].some((t) => t.textContent.includes('${target} / ${target}'))`,
+      `[...document.querySelectorAll('.tabletop .tokens')].some((t) => t.textContent.includes('${target} / ${target}'))`,
     )) as boolean;
     assert.equal(reached, true, `${capacity}-player match ended at the ${target}-token target`);
     await assertNoErrors(...tabs);
@@ -1100,8 +1294,10 @@ async function main(): Promise<void> {
     await runRenderChecks(base, debugPort);
     console.log('[ui-smoke] chat pill + modal dialog (ticket 20)…');
     await runChatPill(base, debugPort);
-    console.log('[ui-smoke] log top bar + expandable strip (tickets 19, 21)…');
+    console.log('[ui-smoke] log top bar + expandable strip (tickets 19, 21, 33)…');
     await runLogStrip(base, debugPort);
+    console.log('[ui-smoke] fixed stage: zero-scroll tabletop + overlays + portrait lock (ticket 33)…');
+    await runFixedStage(base, debugPort);
     console.log('[ui-smoke] scene-based card animations (ticket 23)…');
     await runSceneAnimations(base, debugPort);
     console.log('[ui-smoke] the draw pops the new card (ticket 28)…');
@@ -1123,7 +1319,8 @@ async function main(): Promise<void> {
       'UI SMOKE OK — narrow-phone layout, render claims, full 2p match (all 8 cards) + rematch, '
       + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), select-confirm regret '
       + '(ticket 25), hand/count sync around King trades (ticket 30), draw pop (ticket 28), chat close '
-      + 'button (ticket 29), reload/resume with chat restored, no error banners anywhere',
+      + 'button (ticket 29), reload/resume with chat restored, fixed stage + overlays + portrait lock '
+      + '(ticket 33), no error banners anywhere',
     );  } finally {
     if (chrome) {
       chrome.kill();

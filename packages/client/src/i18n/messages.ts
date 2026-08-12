@@ -49,7 +49,9 @@ export const en = {
   'game.turnBanner': "It's your turn — play a card.",
   'game.playCard': 'Play {card}',
   'game.emptyHand': 'Your hand is empty.',
-  'game.faceUp': 'Removed face-up: {cards}',
+  // Ticket 33: the 2-player face-up removals moved from a text line to real
+  // card thumbs on the center table — this is now a caption, not a list.
+  'game.faceUp': 'Removed face-up',
   'game.burned': 'face-down removed card — unknown to all',
   'game.roundWonTail': 'won the round.',
   'game.startNextRound': 'Start next round',
@@ -59,6 +61,11 @@ export const en = {
   'game.protected': 'You are protected by the Handmaid',
   'game.abilities': 'Card abilities',
   'game.logEmpty': 'No events yet.',
+  // Ticket 33: the merged top bar + overlays.
+  'game.manual': 'Manual',
+  'game.logTitle': 'Game log',
+  'game.rotateTitle': 'Rotate your phone',
+  'game.rotateHint': 'The game locks to portrait orientation.',
 
   // --- Table panel ---
   'table.title': 'Table',
@@ -245,7 +252,7 @@ export const zh: Record<MessageKey, string> = {
   'game.turnBanner': '轮到你了——打出一张牌。',
   'game.playCard': '打出 {card}',
   'game.emptyHand': '你的手牌为空。',
-  'game.faceUp': '移除的明牌：{cards}',
+  'game.faceUp': '移除的明牌',
   'game.burned': '移除的暗牌——所有人都不知道',
   'game.roundWonTail': '赢得了这一轮。',
   'game.startNextRound': '开始下一轮',
@@ -255,6 +262,10 @@ export const zh: Record<MessageKey, string> = {
   'game.protected': '你受到侍女的保护',
   'game.abilities': '卡牌能力',
   'game.logEmpty': '还没有事件。',
+  'game.manual': '手册',
+  'game.logTitle': '对局记录',
+  'game.rotateTitle': '请旋转手机',
+  'game.rotateHint': '游戏仅支持竖屏显示。',
 
   // --- Table panel ---
   'table.title': '牌桌',
