@@ -4,14 +4,16 @@
 
 **Blocked by:** none
 
-**Status:** needs-info
+**Status:** ready-for-agent
 
-- [ ] Reproduce on the current build: does the dialog close on Esc / outside click / send in the reporter's environment (device + browser)?
-- [ ] If reproducible: fix the failing path(s); if not reproducible on any environment we can test: close as wontfix with the smoke coverage noted
-- [ ] ui-smoke keeps asserting close-on-send / Esc / outside-click; add the device case if it reproduces
+- [ ] Add a **visible close button** to the chat dialog (top-right ×/关闭, all screen sizes): on phones the dialog is near-fullscreen so there is no visible backdrop to tap, and there is no Esc key — the only working close was send
+- [ ] The close button uses the same `closeDialog` path (seen-baseline sync) as Esc/outside/send
+- [ ] ui-smoke: the chatPill scenario asserts the close button is visible and closes the dialog at phone size (the near-fullscreen case where outside-click is impractical)
 
 ## Comments
 
 **Symptom (from to-discuss.md):** "The chat dialog must input and send, or it will not shut down"
 
 **Context (2025):** the current `ChatDialog` (`Game.tsx`) closes via three paths: the backdrop's `onClick` (outside click), a window `keydown` Esc listener, and `send()` (which also clears the draft). The ui-smoke `chatPill` scenario drives Esc and outside-click closes and passes. Needs the reporter's device/browser + steps to distinguish a stale report from a real mobile gap. One candidate: on a phone the soft keyboard may stay up after the dialog closes, making it *feel* unclosed — the dialog itself may be gone while the keyboard remains.
+
+**Repro (confirmed 2025):** iPhone Chrome — the dialog is near-fullscreen on phones, so "click outside" has no visible target, and there is no Esc key on a phone; the only working close was typing + sending. The desktop close paths (Esc / outside click / send) are covered by ui-smoke and remain.

@@ -4,11 +4,11 @@
 
 **Blocked by:** 26 (the scene verdict arrives as data, not inference — the caption lives in `scene.baron.vs` / `scene.baron.tie` / `scene.baron.backfire`)
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
-- [ ] Caption accuracy: `scene.baron.vs` no longer reads "{actor}'s Baron vs …" — the Baron is not a comparator; the compared cards are the actor's kept card and the target's card
-- [ ] Visual accuracy: the pair flash shows the actor's kept card (rank, actor's own stream only) vs the target's revealed card; other viewers see only what is public (the target's revealed card; a card-back or no flash for the actor's side)
-- [ ] Privacy: the actor's kept card never reaches other viewers' streams (mirror the `peek`/`cardDrawn` per-viewer payload pattern)
+- [ ] Caption accuracy: the Baron is never named as a comparator — the target-loses line names the compared cards where the viewer can know them (the actor's own stream: "Your {kept} vs {target}'s {revealed}"; everyone else: a generic "{actor} compared — {target}'s {revealed} was lower"); the tie line drops the card entirely ("{actor} tied with {target}"); the backfire line is already accurate (it names the loser's revealed card)
+- [ ] Visual accuracy: the pair flash shows the actor's kept card vs the target's revealed card **on the actor's own stream only**; other viewers see a **card-back** at the actor + the target's revealed card — never the actor's kept card
+- [ ] Privacy: the actor's kept card never reaches other viewers' streams — the scene is built per-viewer client-side; only the actor's own build injects their kept rank
 - [ ] Tests: scene builder produces the accurate pair/verdict per viewer; no private card leaks to other viewers' scenes; i18n lines render in en + zh
 - [ ] ui-smoke: the Baron scene caption + flash assert the accurate wording; no error banners
 - [ ] core + typecheck + smoke + ui-smoke green
@@ -18,3 +18,5 @@
 **Symptom (from to-discuss.md):** "baron's compare animation is not right, it shows baron compare with the other player's card, but actually, baron does not participate in the compare. He compares the card that are not shown to others, so the description shows needs to be more accurate."
 
 **Context (2025):** today `sceneStages`' `baron` case flashes `rankA: playedRank` (the Baron) side by side with the target's revealed card, and `scene.baron.vs` renders "Alice's Baron vs Bob's Guard". Both imply the Baron itself was weighed. The Baron is the *instrument*, not the subject. Open question for the maintainer: what should other viewers see on the actor's side of the pair — a card-back flash (the comparison happened, the card is hidden), or nothing (the loser's card alone)? The actor's own stream can show their kept card for real.
+
+**Decisions (design pass 2025):** the actor's own stream shows the true comparison — their kept card vs the target's revealed card ("你的 守卫 对 Bob 的 守卫"); **other viewers see a card-back at the actor** plus the target's revealed card, with a caption that never names the actor's card; the tie line becomes card-less ("Alice 与 Bob 打平"); the backfire line is already correct (the loser's card is public). The scene builder gains the viewer's own hand (`usePlayScenes`/`scenesFor`) so the actor's build can inject the kept rank — it is their own card, so injecting it on their stream leaks nothing.
