@@ -51,18 +51,18 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
   const handKey = view.hand.map((c) => `${c.rank}:${c.name}`).join(',');
   useEffect(() => setSelected(null), [handKey, view.currentTurn, view.pendingChoice, view.phase]);
 
-  // Ticket 28: the drawer's own draw pops the new card in the hand (~0.6s) —
-  // a pure CSS moment, no scene, no round pause. The deck counts (top bar
-  // meta + the center-table stack) pulse on every draw (keyed remount
-  // restarts the CSS animation).
+  // Ticket 28 + 36: the drawer's own draw pops the new card in the hand — a
+  // pure CSS moment, no scene, no round pause. Ticket 36: the pop waits for
+  // the previous play's scene to fully drain, so it never overlaps the
+  // still-animating turn (the effect re-fires when `scenes.busy` clears).
   const [popRank, setPopRank] = useState<Rank | null>(null);
   const drawSeq = game.lastDraw?.seq ?? 0;
   useEffect(() => {
-    if (game.lastDraw === null) return;
+    if (game.lastDraw === null || scenes.busy) return;
     setPopRank(game.lastDraw.rank);
     const timer = setTimeout(() => setPopRank(null), 600);
     return () => clearTimeout(timer);
-  }, [drawSeq]);
+  }, [drawSeq, scenes.busy]);
   const [deckPulse, setDeckPulse] = useState(0);
   useEffect(() => setDeckPulse((n) => n + 1), [view.deckCount]);
 
@@ -414,14 +414,18 @@ function SeatTile({
       className={`seat ${position} ${p.out ? 'out' : ''} ${isTurn ? 'turn' : ''} ${chooseable ? 'chooseable' : ''} ${chosen ? 'chosen' : ''}`}
       onClick={chooseable ? onPick : undefined}
     >
-      <span className="name" title={p.name}>
-        {p.name}
-      </span>
-      <span className="tokens" title={t('table.tokensTitle')}>♥ {p.tokens} / {view.tokenTarget}</span>
-      {isTurn && <span className="turn-badge">{t('table.turn')}</span>}
-      {p.protected && <span className="badge">{t('table.protected')}</span>}
-      {p.out && <span className="badge out-badge">{t('table.out')}</span>}
-      {away.includes(p.id) && <span className="badge away-badge">{t('table.reconnecting')}</span>}
+      {/* Ticket 36: the header — name, hearts, and badges share one line
+          (wrapping on narrow tiles) so the tile stays short on phones. */}
+      <div className="seat-head">
+        <span className="name" title={p.name}>
+          {p.name}
+        </span>
+        <span className="tokens" title={t('table.tokensTitle')}>♥ {p.tokens} / {view.tokenTarget}</span>
+        {isTurn && <span className="turn-badge">{t('table.turn')}</span>}
+        {p.protected && <span className="badge">{t('table.protected')}</span>}
+        {p.out && <span className="badge out-badge">{t('table.out')}</span>}
+        {away.includes(p.id) && <span className="badge away-badge">{t('table.reconnecting')}</span>}
+      </div>
       {/* The cards row: face-up discards + the hand count side by side, so
           the tile stays short enough for the ring to fit the band. */}
       <SeatCards discardPile={p.discardPile} handCount={p.handCount} />
@@ -432,8 +436,9 @@ function SeatTile({
 /**
  * The center table (ticket 33, Q8): the deck as a physical card-back stack
  * with its count (the ticket-28 draw anchor), the face-down burned card, and
- * the 2-player face-up removals as real card thumbs (replacing the text
- * line). The deck count pulses on every draw (keyed remount, ticket 28).
+ * the 2-player face-up removals as real card thumbs. Ticket 36: one compact
+ * horizontal row — the text labels are gone (the tooltips and the manual
+ * carry that info), so the row takes a fraction of the band's height.
  */
 function CenterTable({ view, deckPulse }: { view: ViewState; deckPulse: number }) {
   const { t } = useLocale();
@@ -446,19 +451,15 @@ function CenterTable({ view, deckPulse }: { view: ViewState; deckPulse: number }
         </span>
       </div>
       {view.burnedCount > 0 && view.phase === 'round' && (
-        <div className="burned">
+        <div className="burned" title={t('game.burned')}>
           <img src="/cards/back-light.png" alt="" className="card-back burned-back" draggable={false} />
-          <span className="muted burned-label">{t('game.burned')}</span>
         </div>
       )}
       {view.faceUpRemoved.length > 0 && (
-        <div className="face-up">
-          <span className="muted face-up-label">{t('game.faceUp')}</span>
-          <div className="face-up-row">
-            {view.faceUpRemoved.map((c, i) => (
-              <CardThumb key={i} rank={c.rank} className="face-up-thumb" />
-            ))}
-          </div>
+        <div className="face-up" title={t('game.faceUp')}>
+          {view.faceUpRemoved.map((c, i) => (
+            <CardThumb key={i} rank={c.rank} className="face-up-thumb" />
+          ))}
         </div>
       )}
     </div>

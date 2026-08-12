@@ -542,7 +542,7 @@ describe('sceneStages (ticket 23 + 26) — three-step decomposition', () => {
   it('flashes a standalone reveal with no caption', () => {
     const scene: Scene = { key: 's1', kind: 'reveal', actorId: 'B', playedRank: 6 };
     const stages = sceneStages(scene, loc);
-    expect(stages).toEqual([{ els: [{ kind: 'flash', rank: 6, at: 'B' }], ms: 900 }]);
+    expect(stages).toEqual([{ els: [{ kind: 'flash', rank: 6, at: 'B' }], ms: 1200 }]);
   });
 
   it('renders every remaining verdict caption without leftover placeholders', () => {

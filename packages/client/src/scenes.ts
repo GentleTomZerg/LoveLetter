@@ -584,13 +584,13 @@ export interface SceneLoc {
 }
 
 export const STAGE_MS = {
-  fly: 1000, // use + travel & archive
-  flyDirect: 900, // no waypoint — straight to the pile
-  flash: 900,
-  pair: 1200,
-  backFly: 900,
-  caption: 1500, // the verdict hold
-  banner: 2200,
+  fly: 1400, // use + travel & archive (ticket 36: slowed ~a third)
+  flyDirect: 1250, // no waypoint — straight to the pile
+  flash: 1200,
+  pair: 1600,
+  backFly: 1250,
+  caption: 2000, // the verdict hold
+  banner: 2800,
 } as const;
 
 const name = (loc: SceneLoc, id: string) =>

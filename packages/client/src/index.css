@@ -323,9 +323,9 @@ button:disabled {
 .center-table { grid-area: table; }
 
 /* One compact seat tile per opponent (issue 14 content, re-laid-out for the
-   top row): name / hearts / turn / protected-out / discards / hand count.
+   top row): a header line (name / hearts / badges) over the cards row.
    Ticket 35: the viewer's own seat is the dock, so the ring tiles grew to
-   ~20rem and the pile keeps its compressed thumbs. */
+   ~20rem; ticket 36: the header shares one line so tiles stay short. */
 .tabletop .seat {
   display: flex;
   flex-direction: column;
@@ -338,6 +338,17 @@ button:disabled {
   font-size: 0.9rem;
   text-align: center;
   width: min(100%, 20rem);
+}
+
+/* Ticket 36: the header — name, hearts, and badges on one line, wrapping
+   on narrow tiles so nothing clips. */
+.tabletop .seat .seat-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  max-width: 100%;
 }
 /* The active player's tile is highlighted AND carries a "turn" pill — the
    signal never relies on color alone (issue 14). */
@@ -366,7 +377,7 @@ button:disabled {
 
 .tabletop .seat .name {
   font-weight: 600;
-  max-width: 12rem;
+  max-width: 10rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -403,20 +414,21 @@ button:disabled {
   max-width: 100%;
 }
 
-/* Ticket 33: seat tiles compress — smaller pile thumbs (~2.2rem) so the
-   ring fits the band. */
+/* Ring piles wrap — every card carries the same overlap, so a wrapped row's
+   first card starts aligned (the old :first-child-only margin pulled it left
+   of the row start, breaking the pile look on phones — ticket 36); the left
+   padding gives the first card's negative margin room. */
 .tabletop .seat .pile {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
+  padding-left: 1.4rem;
 }
 
 /* Overlap + drop shadow so a multi-card pile reads as a stack of cards.
-   Ticket 35: tighter overlap — a full 16-card pile reads as one compact row
-   (the thumbs stay readable; shrinking the deduction surface was rejected).
    One rule for the ring tiles and the viewer's dock — same thumb size, so
-   the two never drift (review: Q3(a)). */
+   the two never drift (Q3(a): shrinking the thumbs was rejected). */
 .seat .pile img {
   width: 2.2rem;
   border-radius: 4px;
@@ -424,10 +436,6 @@ button:disabled {
   display: block;
   margin-left: -1.4rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.seat .pile img:first-child {
-  margin-left: 0;
 }
 
 .tabletop .seat .pile-empty {
@@ -688,10 +696,12 @@ button:disabled {
 }
 
 /* The dock's own discard pile — compact, like the opponents' piles (same
-   `.seat .pile img` rule above; the container just lays them out inline). */
+   `.seat .pile img` rule above; the container lays them out inline and the
+   left padding compensates the uniform overlap). */
 .dock-seat .pile {
   display: flex;
   align-items: center;
+  padding-left: 1.4rem;
 }
 
 .hand {
@@ -844,13 +854,15 @@ button:disabled {
 
 /* --- The center table (ticket 33, Q8): the deck as a physical card-back
    stack with its count (the ticket-28 draw anchor), the face-down burned
-   card, and the 2-player face-up removals as real card thumbs --- */
+   card, and the 2-player face-up removals as real card thumbs. Ticket 36:
+   one compact horizontal row — the text labels are gone (the tooltips and
+   the manual carry that info). --- */
 .center-table {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.35rem;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.3rem;
 }
 
 .deck {
@@ -858,7 +870,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.25rem;
 }
 
 .deck-back {
@@ -884,7 +896,6 @@ button:disabled {
 .burned {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
 }
 
 .burned-back {
@@ -893,24 +904,10 @@ button:disabled {
   border: 1px solid var(--line);
 }
 
-.burned-label {
-  font-size: 0.7rem;
-}
-
 .face-up {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
-}
-
-.face-up-label {
-  font-size: 0.7rem;
-}
-
-.face-up-row {
-  display: flex;
-  gap: 0.3rem;
+  gap: 0.25rem;
 }
 
 .face-up-thumb {
