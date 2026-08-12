@@ -59,13 +59,32 @@ export const en = {
   'game.matchRematch': 'First to {count} tokens — rematch with the same seats?',
   'game.rematch': 'Rematch',
   'game.protected': 'You are protected by the Handmaid',
-  'game.abilities': 'Card abilities',
   'game.logEmpty': 'No events yet.',
   // Ticket 33: the merged top bar + overlays.
   'game.manual': 'Manual',
   'game.logTitle': 'Game log',
   'game.rotateTitle': 'Rotate your phone',
   'game.rotateHint': 'The game locks to portrait orientation.',
+
+  // --- Rules manual (ticket 34): one popup, three sections ---
+  'manual.title': 'Rules manual',
+  'manual.quickRules': 'Quick rules',
+  'manual.cards': 'The eight cards',
+  'manual.rulings': 'Adopted rulings',
+  // Quick rules (concise — a manual, not a rulebook).
+  'manual.rule.setup': 'Setup: 16 cards, 1 removed face-down; with 2 players, 3 more are removed face-up.',
+  'manual.rule.turn': 'On your turn: draw one card, then play one of your two cards face-up.',
+  'manual.rule.countess': 'The Countess must be discarded immediately whenever you hold the King or the Prince.',
+  'manual.rule.protected': "The Handmaid makes you immune to other players' cards until the start of your next turn.",
+  'manual.rule.roundEnd': 'A round ends when only one player is left, or when the deck empties (highest hand wins).',
+  'manual.rule.tokens': 'Tokens to win: 7 for 2 players, 5 for 3, 4 for 4 — the first to the target wins the match.',
+  'manual.rule.burned': 'The face-down removed card is unknown to all players.',
+  // The four adopted rulings (Q17, ADR-0001) — they change how you must play
+  // but appear on no card face.
+  'manual.ruling.selfGuard': 'The Guard cannot name itself — you always target another player.',
+  'manual.ruling.tie': 'A full tie at round end awards a token to every tied player.',
+  'manual.ruling.countessTrade': 'The Countess must be discarded immediately after a King trade.',
+  'manual.ruling.princeBurned': "With 2 players, the Prince's empty-deck draw takes the face-down burned card.",
 
   // --- Table panel ---
   'table.title': 'Table',
@@ -260,12 +279,28 @@ export const zh: Record<MessageKey, string> = {
   'game.matchRematch': '先到 {count} 枚徽记者胜——用相同座位再来一局？',
   'game.rematch': '再来一局',
   'game.protected': '你受到侍女的保护',
-  'game.abilities': '卡牌能力',
   'game.logEmpty': '还没有事件。',
   'game.manual': '手册',
   'game.logTitle': '对局记录',
   'game.rotateTitle': '请旋转手机',
   'game.rotateHint': '游戏仅支持竖屏显示。',
+
+  // --- Rules manual (ticket 34) ---
+  'manual.title': '玩法手册',
+  'manual.quickRules': '快速规则',
+  'manual.cards': '八张卡牌',
+  'manual.rulings': '采用裁定',
+  'manual.rule.setup': '开局：16 张牌，移除 1 张暗牌；2 人局再移除 3 张明牌。',
+  'manual.rule.turn': '回合：先抽一张牌，再从两张手牌中明置打出一张。',
+  'manual.rule.countess': '只要手中同时有国王或王子，就必须立即弃掉伯爵夫人。',
+  'manual.rule.protected': '侍女使你在下个回合开始前不受其他玩家卡牌的影响。',
+  'manual.rule.roundEnd': '一局结束：只剩一人存活，或牌库耗尽（手牌点数最高者获胜）。',
+  'manual.rule.tokens': '获胜徽记：2 人 7 枚、3 人 5 枚、4 人 4 枚——先达到目标者赢得比赛。',
+  'manual.rule.burned': '移除的暗牌对所有人都保密。',
+  'manual.ruling.selfGuard': '守卫不能选择自己——只能指向其他玩家。',
+  'manual.ruling.tie': '一局结束时完全平局，则所有并列玩家各得一枚徽记。',
+  'manual.ruling.countessTrade': '国王交换手牌后，伯爵夫人必须立即弃掉。',
+  'manual.ruling.princeBurned': '2 人局中，王子在牌库耗尽时抽取暗置的移除牌。',
 
   // --- Table panel ---
   'table.title': '牌桌',

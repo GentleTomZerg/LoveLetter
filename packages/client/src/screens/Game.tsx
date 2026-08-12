@@ -102,11 +102,9 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
         {/* The middle band — the only flexible region; internal scroll is the
             documented last resort (4 players on a tiny phone, or a pending
             choice pushing the ring). The top bar and the dock never leave
-            the viewport. The abilities reference (issue 12) rides at the
-            bottom of the band until ticket 34's manual replaces it. */}
+            the viewport. */}
         <div className="stage-band">
           <TableRing view={view} selfId={selfId} away={game.away} deckPulse={deckPulse} />
-          <Abilities />
         </div>
 
         <div className="stage-bottom">
@@ -495,24 +493,7 @@ function LogModal({
   );
 }
 
-/**
- * A collapsible reference of all eight cards and their effects (issue 12) —
- * touch screens have no hover, so the tooltips are unreachable there. The
- * desktop tooltips stay; this is the always-available version. Ticket 34
- * replaces it with the full manual (the modal opened from the top bar's
- * Manual button) and removes this panel.
- */
-function Abilities() {
-  const { t } = useLocale();
-  return (
-    <details className="panel abilities">
-      <summary>{t('game.abilities')}</summary>
-      <CardAbilityList />
-    </details>
-  );
-}
-
-/** The eight cards, rank / name / effect (the shared abilities content). */
+/** The eight cards, rank / name / effect (the manual's second section). */
 function CardAbilityList() {
   const ranks: Rank[] = [1, 2, 3, 4, 5, 6, 7, 8];
   const { t, cardName, cardEffect } = useLocale();
@@ -531,10 +512,13 @@ function CardAbilityList() {
 }
 
 /**
- * Ticket 33: the Manual button in the top bar opens a modal. The three-part
- * manual (quick rules + cards + rulings) lands in ticket 34 — for now the
- * modal carries the current card-abilities content so the button is never
- * dead; 34 swaps the content in and deletes the Abilities `<details>`.
+ * The rules manual (ticket 34): one popup with three sections — ① quick
+ * rules, ② the eight cards (rank / name / effect), ③ the four adopted
+ * rulings (Q17, ADR-0001) — the rules that change how you must play but
+ * appear on no card face. Localized en + zh (ADR-0004). Opens from the
+ * top bar's Manual button (ticket 33); the old Abilities `<details>` panel
+ * (ticket 12) is deleted. Closes on outside click / Esc / the close button
+ * and fills the viewport on phones (the chat/log precedent).
  */
 function ManualModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useLocale();
@@ -544,17 +528,43 @@ function ManualModal({ open, onClose }: { open: boolean; onClose: () => void }) 
       className="overlay manual-modal"
       role="dialog"
       aria-modal="true"
-      aria-label={t('game.abilities')}
+      aria-label={t('manual.title')}
       onClick={onClose}
     >
-      <div className="log-dialog panel" onClick={(e) => e.stopPropagation()}>
+      <div className="manual-dialog panel" onClick={(e) => e.stopPropagation()}>
         <div className="log-header">
-          <p className="panel-title">{t('game.abilities')}</p>
+          <p className="panel-title">{t('manual.title')}</p>
           <button className="chat-close" onClick={onClose} aria-label={t('chat.close')}>
             ×
           </button>
         </div>
-        <CardAbilityList />
+        <div className="manual-body">
+          <section className="manual-section quick-rules">
+            <h3 className="manual-heading">{t('manual.quickRules')}</h3>
+            <ul className="manual-list">
+              <li>{t('manual.rule.setup')}</li>
+              <li>{t('manual.rule.turn')}</li>
+              <li>{t('manual.rule.countess')}</li>
+              <li>{t('manual.rule.protected')}</li>
+              <li>{t('manual.rule.roundEnd')}</li>
+              <li>{t('manual.rule.tokens')}</li>
+              <li>{t('manual.rule.burned')}</li>
+            </ul>
+          </section>
+          <section className="manual-section cards-section">
+            <h3 className="manual-heading">{t('manual.cards')}</h3>
+            <CardAbilityList />
+          </section>
+          <section className="manual-section rulings-section">
+            <h3 className="manual-heading">{t('manual.rulings')}</h3>
+            <ul className="manual-list rulings">
+              <li>{t('manual.ruling.selfGuard')}</li>
+              <li>{t('manual.ruling.tie')}</li>
+              <li>{t('manual.ruling.countessTrade')}</li>
+              <li>{t('manual.ruling.princeBurned')}</li>
+            </ul>
+          </section>
+        </div>
       </div>
     </div>
   );

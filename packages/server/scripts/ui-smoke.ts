@@ -295,16 +295,9 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
     'no bare .hand class inside seats',
   );
 
-  // The abilities reference (issue 12) lists all eight cards once opened.
-  assert.equal(await tabA.eval(`document.querySelector('.abilities') !== null`), true, 'abilities panel present');
-  assert.equal(await tabA.eval(`document.querySelector('.abilities').open`), false, 'abilities panel collapsed');
-  await click(tabA, '.abilities summary');
-  await waitFor(tabA, `document.querySelector('.abilities').open === true`, 5000, 'abilities panel opens');
-  assert.equal(
-    await tabA.eval(`document.querySelectorAll('.abilities-list li').length`),
-    8,
-    'all eight cards listed',
-  );
+  // The eight cards + the four rulings live in the manual (ticket 34) — the
+  // old in-flow abilities `<details>` is gone; runFixedStage opens the manual
+  // from the top bar and asserts the three sections there.
 
   // Ticket 33: the round-end overlay resets the piles on "Start next round",
   // so a round that ends exactly when the second pile lands could race the
@@ -542,11 +535,31 @@ async function runFixedStage(base: string, debugPort: number): Promise<void> {
   await click(tabA, '.log-modal .chat-close');
   await waitFor(tabA, `document.querySelector('.log-modal').classList.contains('open') === false`, 5000, 'log modal closes');
 
-  // 3b. The Manual button in the top bar opens a modal (the full manual
-  //     lands in ticket 34; the current abilities content stands in) and
-  //     closes again.
+  // 3b. The Manual button in the top bar opens the rules manual (ticket 34)
+  //     — three sections: quick rules, the eight cards, the four adopted
+  //     rulings — and closes again (outside click / Esc covered by the log
+  //     modal checks; the close button is exercised here).
   await click(tabA, '.manual-button');
   await waitFor(tabA, `document.querySelector('.manual-modal') !== null`, 5000, 'manual modal opens');
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.manual-section').length`),
+    3,
+    'the manual has three sections',
+  );
+  assert.ok(
+    (await tabA.eval(`document.querySelectorAll('.manual-section .manual-list li').length`)) >= 7,
+    'the quick-rules section lists the rules',
+  );
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.cards-section .abilities-list li').length`),
+    8,
+    'all eight cards listed with their effects',
+  );
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.rulings-section .manual-list li').length`),
+    4,
+    'the four adopted rulings are listed',
+  );
   await click(tabA, '.manual-modal .chat-close');
   await waitFor(tabA, `document.querySelector('.manual-modal') === null`, 5000, 'manual modal closes');
 

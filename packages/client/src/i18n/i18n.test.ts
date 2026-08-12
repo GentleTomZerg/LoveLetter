@@ -56,10 +56,35 @@ describe('zh-Hans content (ticket 17)', () => {
     expect(t('zh', 'common.you')).toBe('你');
   });
 
+  it('renders the rules manual in zh (ticket 34)', () => {
+    expect(t('zh', 'manual.title')).toBe('玩法手册');
+    expect(t('zh', 'manual.quickRules')).toBe('快速规则');
+    expect(t('zh', 'manual.cards')).toBe('八张卡牌');
+    expect(t('zh', 'manual.rulings')).toBe('采用裁定');
+    expect(t('zh', 'manual.rule.turn')).toContain('抽一张牌');
+    expect(t('zh', 'manual.ruling.countessTrade')).toContain('立即弃掉');
+  });
+
   it('translates wire error codes and falls back for unknown codes', () => {
     expect(tCode('zh', 'room_not_found')).toBe('找不到房间。');
     expect(tCode('zh', 'countess_forced')).toBe('持有国王或王子时必须弃掉伯爵夫人。');
     expect(tCode('zh', 'no_such_code_xyz')).toBe('出了点问题。');
+  });
+});
+
+describe('rules manual keys (ticket 34)', () => {
+  const manualKeys = (Object.keys(en) as (keyof typeof en)[]).filter((k) => k.startsWith('manual.'));
+
+  it('renders every manual key in en and zh with no leftover placeholders', () => {
+    expect(manualKeys.length).toBeGreaterThan(0);
+    for (const key of manualKeys) {
+      const enOut = t('en', key);
+      const zhOut = t('zh', key);
+      expect(enOut, `en ${key}`).not.toMatch(/[{}]/);
+      expect(zhOut, `zh ${key}`).not.toMatch(/[{}]/);
+      expect(enOut.length, `en ${key} empty`).toBeGreaterThan(0);
+      expect(zhOut.length, `zh ${key} empty`).toBeGreaterThan(0);
+    }
   });
 });
 

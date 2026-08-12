@@ -1279,7 +1279,8 @@ button:disabled {
     padding: 0;
   }
 
-  .log-dialog {
+  .log-dialog,
+  .manual-dialog {
     width: 100vw;
     height: 100vh;
     height: 100dvh;
@@ -1304,22 +1305,58 @@ button:disabled {
   }
 }
 
-/* The abilities reference (issue 12) — a collapsed row under the ring until
-   ticket 34 removes it; compact so the ring still fits the band. */
-.abilities {
-  gap: 0.3rem;
-  padding: 0.4rem 0.8rem;
-  margin: 0 auto 0.25rem;
-  width: fit-content;
+/* --- The manual modal (ticket 34): quick rules + cards + rulings in one
+   scrollable popup --- */
+
+.manual-dialog {
+  width: min(30rem, 100%);
+  max-height: min(85vh, 46rem);
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  overflow-y: auto;
 }
 
-.abilities summary {
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 0.9rem;
+.manual-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-height: 0;
+}
+
+.manual-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.manual-heading {
+  margin: 0;
+  font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
+  font-weight: 700;
+}
+
+.manual-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+/* The rulings are the manual's reason to exist — a light accent to set
+   them apart from the ordinary quick rules. */
+.manual-list.rulings li::before {
+  content: '§';
+  color: var(--accent);
+  font-weight: 800;
+  margin-right: 0.35rem;
 }
 
 .abilities-list {
