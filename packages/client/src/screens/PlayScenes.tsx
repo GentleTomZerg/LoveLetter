@@ -165,7 +165,7 @@ function FlashEl({ el, ms, onDone }: { el: Extract<StageEl, { kind: 'flash' | 'p
     const w = CARD_W * 16;
     const h = CARD_H * 16;
     return [
-      { src: `/cards/${el.rankA}.png`, x: mid.x - w - gap / 2, y: mid.y - h / 2 },
+      { src: el.rankA === null ? '/cards/back-light.png' : `/cards/${el.rankA}.png`, x: mid.x - w - gap / 2, y: mid.y - h / 2 },
       { src: `/cards/${el.rankB}.png`, x: mid.x + gap / 2, y: mid.y - h / 2 },
     ];
   }, onDone);
@@ -339,6 +339,7 @@ export function usePlayScenes(
   log: LogEntry[],
   selfId: string,
   roster: Record<string, string>,
+  hand: Rank[],
 ): PlayScenesApi {
   const { t, cardName } = useLocale();
   const [queue, setQueue] = useState<SceneOrBanner[]>([]);
@@ -358,7 +359,7 @@ export function usePlayScenes(
     }
     const fresh = log.filter((e) => e.id > seenIdRef.current!);
     seenIdRef.current = maxId;
-    const added = scenesFor(fresh, stateRef.current, (entry) => formatLogEntry(entry, ctx));
+    const added = scenesFor(fresh, stateRef.current, (entry) => formatLogEntry(entry, ctx), { selfId, hand });
     stateRef.current = added.state;
     if (added.scenes.length > 0) setQueue((q) => [...q, ...added.scenes]);
   }, [log]);

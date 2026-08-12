@@ -7,7 +7,7 @@ import { PlayScenes, usePlayScenes } from './PlayScenes';
 
 export function Game({ view, selfId, game }: { view: ViewState; selfId: string; game: Game }) {
   const { t, cardName } = useLocale();
-  const scenes = usePlayScenes(view.log, selfId, view.roster);
+  const scenes = usePlayScenes(view.log, selfId, view.roster, view.hand.map((c) => c.rank));
   const me = view.players.find((p) => p.id === selfId);
   const myTurn = view.currentTurn === selfId;
   // Ticket 24: the round waits — the hand stays disabled until the scene
@@ -23,6 +23,20 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
   const handKey = view.hand.map((c) => `${c.rank}:${c.name}`).join(',');
   useEffect(() => setSelected(null), [handKey, view.currentTurn, view.pendingChoice, view.phase]);
 
+  // Ticket 28: the drawer's own draw pops the new card in the hand (~0.6s) —
+  // a pure CSS moment, no scene, no round pause. The header deck count
+  // pulses on every draw (keyed remount restarts the CSS animation).
+  const [popRank, setPopRank] = useState<Rank | null>(null);
+  const drawSeq = game.lastDraw?.seq ?? 0;
+  useEffect(() => {
+    if (game.lastDraw === null) return;
+    setPopRank(game.lastDraw.rank);
+    const timer = setTimeout(() => setPopRank(null), 600);
+    return () => clearTimeout(timer);
+  }, [drawSeq]);
+  const [deckPulse, setDeckPulse] = useState(0);
+  useEffect(() => setDeckPulse((n) => n + 1), [view.deckCount]);
+
   const playerName = (id: string) =>
     id === selfId ? t('common.you') : (view.players.find((p) => p.id === id)?.name ?? id);
 
@@ -35,7 +49,9 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
       <header className="game-header">
         <span>{t('game.room', { code: view.roomCode })}</span>
         <span>{t('game.round', { number: view.roundNumber })}</span>
-        <span>{t('game.deck', { count: view.deckCount })}</span>
+        <span key={`deck${deckPulse}`} className="deck-count">
+          {t('game.deck', { count: view.deckCount })}
+        </span>
         <button className="leave-button" onClick={leave}>
           {t('game.leaveGame')}
         </button>
@@ -58,6 +74,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
                   card={card}
                   playable={canPlay}
                   selected={selected === i}
+                  drawn={popRank === card.rank}
                   onClick={() => setSelected(selected === i ? null : i)}
                 />
               ))}
@@ -161,11 +178,11 @@ function CardThumb({ rank, className }: { rank: Rank; className?: string }) {
   );
 }
 
-function CardView({ card, playable, selected, onClick }: { card: Card; playable: boolean; selected: boolean; onClick: () => void }) {
+function CardView({ card, playable, selected, drawn, onClick }: { card: Card; playable: boolean; selected: boolean; drawn: boolean; onClick: () => void }) {
   const { cardName } = useLocale();
   return (
     <button
-      className={`card art ${playable ? 'playable' : ''} ${selected ? 'selected' : ''}`}
+      className={`card art ${playable ? 'playable' : ''} ${selected ? 'selected' : ''} ${drawn ? 'drawn' : ''}`}
       onClick={onClick}
       disabled={!playable}
     >
@@ -350,7 +367,15 @@ function ChatDialog({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: str
       {open && (
         <div className="chat-modal" role="dialog" aria-modal="true" aria-label={t('chat.title')} onClick={closeDialog}>
           <div className="chat-dialog panel" onClick={(e) => e.stopPropagation()}>
-            <p className="panel-title">{t('chat.title')}</p>
+            <div className="chat-header">
+              <p className="panel-title">{t('chat.title')}</p>
+              {/* Ticket 29: the explicit close button — on phones the dialog
+                  is near-fullscreen so there is no backdrop to tap and no Esc
+                  key; this is the only close that always exists. */}
+              <button className="chat-close" onClick={closeDialog} aria-label={t('chat.close')}>
+                ×
+              </button>
+            </div>
             <ul className="chat-log" ref={listRef}>
               {chat.map((m, i) => (
                 <li key={i} className={isMine(m) ? 'mine' : ''}>

@@ -46,9 +46,9 @@ export type SceneCaption =
   | { key: 'scene.guard.accuses'; params: { actorId: string; targetId: string; rank: Rank } }
   | { key: 'scene.guard.hit'; params: { targetId: string; rank: Rank } }
   | { key: 'scene.guard.miss'; params: { targetId: string; rank: Rank } }
-  | { key: 'scene.baron.vs'; params: { actorId: string; rankA: Rank; targetId: string; rankB: Rank } }
+  | { key: 'scene.baron.vs'; params: { actorId: string; targetId: string; rankB: Rank; keptRank?: Rank } }
   | { key: 'scene.baron.backfire'; params: { actorId: string; rank: Rank } }
-  | { key: 'scene.baron.tie'; params: { actorId: string; targetId: string; rank: Rank } }
+  | { key: 'scene.baron.tie'; params: { actorId: string; targetId: string } }
   | { key: 'scene.king.swapped' }
   | { key: 'scene.peek.self'; params: { targetId: string; rank: Rank } }
   | { key: 'scene.peek.other'; params: { actorId: string; targetId: string } }
@@ -88,6 +88,10 @@ export interface Scene {
   peekRank?: Rank;
   /** Guard's accuses tag, shown at the target during the sweep. */
   tag?: SceneCaption;
+  /** The actor's kept (compared) card — present only on the actor's own
+   *  stream (ticket 27): their build knows it from their own hand, and it is
+   *  theirs to see; other viewers never receive it (a card-back stands in). */
+  actorKeptRank?: Rank;
   /** The verdict caption for the effect beat — every scene now carries one
    *  (ticket 26: the verdict arrives as data, never inferred). */
   verdict?: SceneCaption;
@@ -131,6 +135,13 @@ interface PendingScene {
   guessRank?: Rank;
 }
 
+/** The viewer's own identity + hand — lets the builder inject private facts
+ *  (the Baron actor's kept card) into the viewer's own scenes only (ticket 27). */
+export interface SceneViewer {
+  selfId: string;
+  hand: Rank[];
+}
+
 export const initialSceneState = (): SceneState => ({ seq: 0, lastPlayed: {}, pending: null });
 
 /** Ranks whose play resolves against a target (Guard/Priest/Baron/Prince/King). */
@@ -156,9 +167,16 @@ const guardTag = (p: PendingScene): SceneCaption => ({
  * state. `fmt` localizes banner text (round/match lines); it is only called
  * for banner entries. A targeting play opens a pending scene (no scene yet);
  * its resolution marker fills the facts; the completion entry emits the whole
- * scene — the three can arrive in different batches.
+ * scene — the three can arrive in different batches. `viewer` (the viewer's
+ * own identity + hand) lets the builder inject the Baron actor's kept card
+ * into the actor's own scene — it is private to them (ticket 27).
  */
-export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: LogEntry) => string): {
+export function scenesFor(
+  fresh: LogEntry[],
+  state: SceneState,
+  fmt: (entry: LogEntry) => string,
+  viewer?: SceneViewer,
+): {
   state: SceneState;
   scenes: SceneOrBanner[];
 } {
@@ -353,7 +371,7 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
             playedRank: pending.playedRank,
             verdict: {
               key: 'scene.baron.tie',
-              params: { actorId: pending.actorId, targetId, rank: pending.playedRank },
+              params: { actorId: pending.actorId, targetId },
             },
           };
           scenes.push(scene);
@@ -391,20 +409,36 @@ export function scenesFor(fresh: LogEntry[], state: SceneState, fmt: (entry: Log
           }
           if (pending.kind === 'baron' && target !== undefined && (playerId === target || playerId === pending.actorId)) {
             const backfire = playerId === pending.actorId;
+            // The actor's kept card is known only to the actor's own build —
+            // their hand at emission still holds it (the reveal was the
+            // target's card). Other viewers see a card-back in its place and
+            // a caption that names neither the card nor the Baron (ticket 27).
+            const actorId = pending.actorId;
+            const playedRank = pending.playedRank;
+            const keptRank =
+              viewer !== undefined && viewer.selfId === actorId
+                ? viewer.hand.find((r) => r !== playedRank)
+                : undefined;
             const scene: Scene = {
               key: nextKey(),
               entryId: entry.id,
               kind: 'baron',
-              actorId: pending.actorId,
+              actorId,
               targetId: target,
-              playedRank: pending.playedRank,
+              playedRank,
+              ...(keptRank !== undefined ? { actorKeptRank: keptRank } : {}),
               revealedRank: entryRank,
               revealedAt: playerId,
               verdict: backfire
-                ? { key: 'scene.baron.backfire', params: { actorId: pending.actorId, rank: entryRank } }
+                ? { key: 'scene.baron.backfire', params: { actorId, rank: entryRank } }
                 : {
                   key: 'scene.baron.vs',
-                  params: { actorId: pending.actorId, rankA: pending.playedRank, targetId: target, rankB: entryRank },
+                  params: {
+                    actorId,
+                    targetId: target,
+                    rankB: entryRank,
+                    ...(keptRank !== undefined ? { keptRank } : {}),
+                  },
                 },
             };
             scenes.push(scene);
@@ -526,8 +560,9 @@ export type StageEl =
   | { kind: 'fly'; rank: Rank; from: string; to: string; via?: string; toPile: boolean }
   | { kind: 'backFly'; from: string; to: string }
   | { kind: 'flash'; rank: Rank; at: string }
-  /** Two cards flash side by side (the Baron comparison). */
-  | { kind: 'pair'; rankA: Rank; atA: string; rankB: Rank; atB: string }
+  /** Two cards flash side by side (the Baron comparison) — `rankA` null is
+   *  a card-back: the actor's kept card is private to other viewers (ticket 27). */
+  | { kind: 'pair'; rankA: Rank | null; atA: string; rankB: Rank; atB: string }
   /** A short tag at a seat (the Guard's accusation). */
   | { kind: 'tag'; text: string; at: string }
   /** The verdict caption — centered, held ~1.5s. */
@@ -582,11 +617,16 @@ function captionText(loc: SceneLoc, cap: SceneCaption): string {
     case 'scene.guard.miss':
       return loc.t(cap.key, { target: name(loc, cap.params.targetId), card: card(loc, cap.params.rank) });
     case 'scene.baron.vs': {
-      const { actorId, rankA, targetId, rankB } = cap.params;
-      const params = { cardA: card(loc, rankA), target: name(loc, targetId), cardB: card(loc, rankB) };
-      return isSelf(loc, actorId)
-        ? loc.t('scene.baron.vs.self', params)
-        : loc.t(cap.key, { actor: name(loc, actorId), ...params });
+      const { actorId, targetId, rankB, keptRank } = cap.params;
+      const params = { target: name(loc, targetId), cardB: card(loc, rankB) };
+      // The actor's own stream carries their kept card — the true comparison
+      // ("Your Guard vs Bob's Guard"). Everyone else sees only the loser's
+      // revealed card (privacy, ticket 27): the line says the revealed card
+      // was lower than the actor's, naming neither the actor's card nor the
+      // Baron itself.
+      return keptRank !== undefined
+        ? loc.t('scene.baron.vs.self', { cardA: card(loc, keptRank), ...params })
+        : loc.t('scene.baron.vs.other', { actor: name(loc, actorId), ...params });
     }
     case 'scene.baron.backfire': {
       const { actorId, rank } = cap.params;
@@ -596,8 +636,10 @@ function captionText(loc: SceneLoc, cap: SceneCaption): string {
         : loc.t(cap.key, { actor: name(loc, actorId), ...params });
     }
     case 'scene.baron.tie': {
-      const { actorId, targetId, rank } = cap.params;
-      const params = { card: card(loc, rank), target: name(loc, targetId) };
+      // Equal hands reveal nothing (ticket 26) — the line names nobody's card
+      // and never the Baron: the comparison itself tied (ticket 27).
+      const { actorId, targetId } = cap.params;
+      const params = { target: name(loc, targetId) };
       return isSelf(loc, actorId)
         ? loc.t('scene.baron.tie.self', params)
         : loc.t(cap.key, { actor: name(loc, actorId), ...params });
@@ -679,15 +721,17 @@ export function sceneStages(scene: Scene, loc: SceneLoc): Stage[] {
 
     case 'baron':
       // The loser's card flashes; both public cards flash side by side
-      // when the target lost (the Baron backfiring shows the actor's own
-      // hand; a tie reveals nothing).
+      // when the target lost (the actor's side is their kept card on their
+      // own stream, a card-back for everyone else — ticket 27; the Baron
+      // backfiring shows the actor's own revealed hand; a tie reveals
+      // nothing).
       return [
         { els: sweep(playedRank), ms: STAGE_MS.fly },
         ...(scene.revealedRank !== undefined && scene.revealedAt !== undefined
           ? scene.revealedAt === actorId
             ? [{ els: [{ kind: 'flash' as const, rank: scene.revealedRank, at: actorId }], ms: STAGE_MS.flash }]
             : targetId !== undefined
-              ? [{ els: [{ kind: 'pair' as const, rankA: playedRank, atA: actorId, rankB: scene.revealedRank, atB: scene.revealedAt }], ms: STAGE_MS.pair }]
+              ? [{ els: [{ kind: 'pair' as const, rankA: scene.actorKeptRank ?? null, atA: actorId, rankB: scene.revealedRank, atB: scene.revealedAt }], ms: STAGE_MS.pair }]
               : []
           : []),
         caption(),

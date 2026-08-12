@@ -125,7 +125,9 @@ describe('scenesFor (ticket 23 + 26) — scene builder', () => {
     ({ state: s } = run([entry(3, 'baron', { playerId: 'A', targetId: 'B' })], s));
     let { scenes } = run([entry(4, 'reveal', { playerId: 'B', rank: 1 }), entry(5, 'eliminate', { playerId: 'B', reason: 'baron' })], s);
     expect(kinds(scenes)).toEqual(['baron']);
-    expect((scenes[0] as Scene).verdict).toEqual({ key: 'scene.baron.vs', params: { actorId: 'A', rankA: 3, targetId: 'B', rankB: 1 } });
+    // A viewer who is not the actor never sees the actor's kept card.
+    expect((scenes[0] as Scene).verdict).toEqual({ key: 'scene.baron.vs', params: { actorId: 'A', targetId: 'B', rankB: 1 } });
+    expect((scenes[0] as Scene).actorKeptRank).toBeUndefined();
 
     // Backfire — only the actor's own card is revealed.
     s = state();
@@ -145,8 +147,28 @@ describe('scenesFor (ticket 23 + 26) — scene builder', () => {
     expect(kinds(scenes)).toEqual(['baron']);
     const scene = scenes[0] as Scene;
     expect(scene.revealedRank).toBeUndefined(); // equal hands reveal nothing
-    expect(scene.verdict).toEqual({ key: 'scene.baron.tie', params: { actorId: 'A', targetId: 'B', rank: 3 } });
+    expect(scene.verdict).toEqual({ key: 'scene.baron.tie', params: { actorId: 'A', targetId: 'B' } });
     expect(scenes.length).toBe(1);
+  });
+
+  it('injects the Baron actor\'s kept card only into the actor\'s own build (ticket 27)', () => {
+    let s = state();
+    ({ state: s } = run([entry(1, 'play', { playerId: 'A', rank: 3 }), entry(2, 'choice', { playerId: 'A' })], s));
+    ({ state: s } = run([entry(3, 'baron', { playerId: 'A', targetId: 'B' })], s));
+    const fresh = [entry(4, 'reveal', { playerId: 'B', rank: 1 }), entry(5, 'eliminate', { playerId: 'B', reason: 'baron' })];
+    // The actor's build (selfId A, hand [Guard]) carries their kept card…
+    const mine = scenesFor(fresh, s, fmt, { selfId: 'A', hand: [1] });
+    const mineScene = mine.scenes[0] as Scene;
+    expect(mineScene.actorKeptRank).toBe(1);
+    expect(mineScene.verdict).toEqual({
+      key: 'scene.baron.vs',
+      params: { actorId: 'A', targetId: 'B', rankB: 1, keptRank: 1 },
+    });
+    // …any other build sees neither the kept card nor its rank.
+    const theirs = scenesFor(fresh, s, fmt, { selfId: 'C', hand: [2, 5] });
+    const theirScene = theirs.scenes[0] as Scene;
+    expect(theirScene.actorKeptRank).toBeUndefined();
+    expect(theirScene.verdict).toEqual({ key: 'scene.baron.vs', params: { actorId: 'A', targetId: 'B', rankB: 1 } });
   });
 
   it('emits a Prince scene whole when the target\'s discard arrives', () => {
@@ -380,13 +402,33 @@ describe('sceneStages (ticket 23 + 26) — three-step decomposition', () => {
       playedRank: 3,
       revealedRank: 1,
       revealedAt: 'B',
-      verdict: { key: 'scene.baron.vs', params: { actorId: 'A', rankA: 3, targetId: 'B', rankB: 1 } },
+      verdict: { key: 'scene.baron.vs', params: { actorId: 'A', targetId: 'B', rankB: 1 } },
     };
     const stages = sceneStages(scene, loc);
     expect(stages).toHaveLength(3);
     expect(stages[0]!.els).toEqual([{ kind: 'fly', rank: 3, from: 'A', via: 'B', to: 'A', toPile: true }]);
-    expect(stages[1]!.els).toEqual([{ kind: 'pair', rankA: 3, atA: 'A', rankB: 1, atB: 'B' }]);
-    expect(stages[2]!.els).toEqual([{ kind: 'caption', text: 'Alice\'s Baron vs Bob\'s Guard' }]);
+    // The viewer is not the actor (loc.selfId is Carol) — the actor's side is
+    // a card-back, never the actor's kept card (ticket 27).
+    expect(stages[1]!.els).toEqual([{ kind: 'pair', rankA: null, atA: 'A', rankB: 1, atB: 'B' }]);
+    expect(stages[2]!.els).toEqual([{ kind: 'caption', text: "Bob's Guard was lower than Alice's" }]);
+  });
+
+  it('shows the actor their real kept card in the Baron pair (ticket 27)', () => {
+    const scene: Scene = {
+      key: 's1',
+      kind: 'baron',
+      actorId: 'A',
+      targetId: 'B',
+      playedRank: 3,
+      actorKeptRank: 1,
+      revealedRank: 4,
+      revealedAt: 'B',
+      verdict: { key: 'scene.baron.vs', params: { actorId: 'A', targetId: 'B', rankB: 4, keptRank: 1 } },
+    };
+    const actorLoc: SceneLoc = { ...loc, selfId: 'A' };
+    const stages = sceneStages(scene, actorLoc);
+    expect(stages[1]!.els).toEqual([{ kind: 'pair', rankA: 1, atA: 'A', rankB: 4, atB: 'B' }]);
+    expect(stages[2]!.els).toEqual([{ kind: 'caption', text: "Your Guard vs Bob's Handmaid" }]);
   });
 
   it('flashes only the actor\'s card when the Baron backfires', () => {
@@ -412,12 +454,12 @@ describe('sceneStages (ticket 23 + 26) — three-step decomposition', () => {
       actorId: 'A',
       targetId: 'B',
       playedRank: 3,
-      verdict: { key: 'scene.baron.tie', params: { actorId: 'A', targetId: 'B', rank: 3 } },
+      verdict: { key: 'scene.baron.tie', params: { actorId: 'A', targetId: 'B' } },
     };
     const stages = sceneStages(scene, loc);
     expect(stages).toHaveLength(2);
     expect(stages[0]!.els).toEqual([{ kind: 'fly', rank: 3, from: 'A', via: 'B', to: 'A', toPile: true }]);
-    expect(stages[1]!.els).toEqual([{ kind: 'caption', text: 'Alice\'s Baron ties Bob' }]);
+    expect(stages[1]!.els).toEqual([{ kind: 'caption', text: 'Alice tied with Bob' }]);
   });
 
   it('crosses two card backs for the King swap after the King plays to the pile', () => {
