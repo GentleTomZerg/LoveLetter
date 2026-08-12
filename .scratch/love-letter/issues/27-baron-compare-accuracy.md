@@ -6,12 +6,12 @@
 
 **Status:** ready-for-agent
 
-- [ ] Caption accuracy: the Baron is never named as a comparator — the target-loses line names the compared cards where the viewer can know them (the actor's own stream: "Your {kept} vs {target}'s {revealed}"; everyone else: a generic "{actor} compared — {target}'s {revealed} was lower"); the tie line drops the card entirely ("{actor} tied with {target}"); the backfire line is already accurate (it names the loser's revealed card)
-- [ ] Visual accuracy: the pair flash shows the actor's kept card vs the target's revealed card **on the actor's own stream only**; other viewers see a **card-back** at the actor + the target's revealed card — never the actor's kept card
-- [ ] Privacy: the actor's kept card never reaches other viewers' streams — the scene is built per-viewer client-side; only the actor's own build injects their kept rank
-- [ ] Tests: scene builder produces the accurate pair/verdict per viewer; no private card leaks to other viewers' scenes; i18n lines render in en + zh
-- [ ] ui-smoke: the Baron scene caption + flash assert the accurate wording; no error banners
-- [ ] core + typecheck + smoke + ui-smoke green
+- [x] Caption accuracy: the Baron is never named as a comparator — the target-loses line names the compared cards where the viewer can know them (the actor's own stream: "Your {kept} vs {target}'s {revealed}"; everyone else: a generic "{actor} compared — {target}'s {revealed} was lower"); the tie line drops the card entirely ("{actor} tied with {target}"); the backfire line is already accurate (it names the loser's revealed card)
+- [x] Visual accuracy: the pair flash shows the actor's kept card vs the target's revealed card **on the actor's own stream only**; other viewers see a **card-back** at the actor + the target's revealed card — never the actor's kept card
+- [x] Privacy: the actor's kept card never reaches other viewers' streams — the scene is built per-viewer client-side; only the actor's own build injects their kept rank
+- [x] Tests: scene builder produces the accurate pair/verdict per viewer; no private card leaks to other viewers' scenes; i18n lines render in en + zh
+- [x] ui-smoke: the Baron scene caption + flash assert the accurate wording; no error banners
+- [x] core + typecheck + smoke + ui-smoke green
 
 ## Comments
 
@@ -20,3 +20,5 @@
 **Context (2025):** today `sceneStages`' `baron` case flashes `rankA: playedRank` (the Baron) side by side with the target's revealed card, and `scene.baron.vs` renders "Alice's Baron vs Bob's Guard". Both imply the Baron itself was weighed. The Baron is the *instrument*, not the subject. Open question for the maintainer: what should other viewers see on the actor's side of the pair — a card-back flash (the comparison happened, the card is hidden), or nothing (the loser's card alone)? The actor's own stream can show their kept card for real.
 
 **Decisions (design pass 2025):** the actor's own stream shows the true comparison — their kept card vs the target's revealed card ("你的 守卫 对 Bob 的 守卫"); **other viewers see a card-back at the actor** plus the target's revealed card, with a caption that never names the actor's card; the tie line becomes card-less ("Alice 与 Bob 打平"); the backfire line is already correct (the loser's card is public). The scene builder gains the viewer's own hand (`usePlayScenes`/`scenesFor`) so the actor's build can inject the kept rank — it is their own card, so injecting it on their stream leaks nothing.
+
+**Implementation notes (ticket 27, 2025):** `scenesFor` gains a `viewer` ({selfId, hand}) — the actor's own build injects their kept rank into the scene (`actorKeptRank` + the caption's `keptRank` param); every other build sees a card-back pair and a caption naming neither the actor's card nor the Baron ("Bob's Guard was lower than Alice's"; zh "Bob 的守卫 比 Alice 的低"). The tie line dropped the card ("Alice tied with Bob" / "Alice 与 Bob 打平"); the backfire line was already accurate (it names the loser's revealed card — public). `pair`'s `rankA` is now `Rank | null` (null renders a card-back in PlayScenes).
