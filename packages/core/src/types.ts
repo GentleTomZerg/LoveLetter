@@ -152,7 +152,7 @@ export type Event =
   // (public), `guessRank` the Guard's guess (public — the guess is announced).
   | { type: 'guardMissed'; playerId: string; targetId: string; guessRank: Rank; rank: Rank }
   | { type: 'baronTied'; playerId: string; targetId: string; rank: Rank }
-  | { type: 'handTraded'; playerId: string; card: Card | null; count: number } // card visible only to the named player; count (received hand size) is public
+  | { type: 'handTraded'; playerId: string; cards: Card[] | null; count: number } // cards visible only to the named player (the full received hand, possibly empty); count (received hand size) is public
   | { type: 'handPeeked'; playerId: string; targetPlayerId: string; card: Card | null } // card visible only to the Priest's chooser
   | { type: 'cardDiscarded'; playerId: string; card: Card; reason: 'prince' | 'countess' }
   | { type: 'handRevealed'; playerId: string; card: Card }

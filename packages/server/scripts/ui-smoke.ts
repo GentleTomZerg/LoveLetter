@@ -20,6 +20,10 @@
  *               clicking the other card switches the selection, and nothing
  *               is sent until the confirm; the log gains exactly one play
  *               line and the bar clears.
+ *  - kingTrade   ticket 30: the hand area shows exactly as many cards as the
+ *               scoreboard counts at every turn-holder moment, around King
+ *               trades (the fixed desync left a stale card after a trade
+ *               against an empty hand — clicking it bounced an error).
  *  - logStrip   the log is a top bar fixed at the top of the viewport (issue
  *               21) collapsing to a latest-event strip and expanding in place
  *               (ticket 19): the strip shows the newest entry, tracks live
@@ -818,6 +822,62 @@ async function runSelectConfirm(base: string, debugPort: number): Promise<void> 
 }
 
 // ---------------------------------------------------------------------------
+// Scenario — ticket 30: the hand area and the scoreboard count always agree,
+// including around King trades. The fixed bug left a stale card in the hand
+// area after a trade against an empty-handed player (a Prince'd target on an
+// empty deck), so clicking it bounced "no card on that position". The smoke
+// drives the match until King trades land, then watches every turn-holder
+// moment for the hand/count invariant — the user-facing half of the bug; the
+// deterministic regression lives in core's view-sync test.
+// ---------------------------------------------------------------------------
+
+async function runKingTrade(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+
+  const kingLines = () => tabA.eval(`document.querySelectorAll('.log li.log-king').length`) as Promise<number>;
+  let trades = 0;
+  let checks = 0;
+  // Keep driving until we have both the turn-holder checks AND at least one
+  // King trade — the King is ~1/16 of the deck, so a trade can take a while.
+  const deadline = Date.now() + 90_000;
+  while ((checks < 8 || trades < 1) && Date.now() < deadline) {
+    const before = await kingLines();
+    // Watch the invariant: whenever this tab holds the turn, the hand area
+    // must show exactly as many cards as the scoreboard counts.
+    for (const t of [tabA, tabB]) {
+      const r = await t.eval(`(() => {
+        const seat = document.querySelector('.seat.turn.me');
+        if (seat === null) return null; // not this tab's turn — nothing to check
+        const shown = document.querySelectorAll('.hand button.card').length;
+        const count = seat.querySelector('.hand-count')?.textContent;
+        return count === null ? null : { shown, count: Number(count) };
+      })()`);
+      if (r !== null) {
+        assert.equal(r.shown, r.count, `hand area (${r.shown} cards) vs scoreboard (${r.count})`);
+        checks += 1;
+      }
+    }
+    // Drive the match forward: one legal move, or the rematch when it ends.
+    await click(tabA, '.match-over button');
+    let acted = false;
+    for (const t of [tabA, tabB]) {
+      if (await playOneMove(t)) { acted = true; break; }
+    }
+    if (!acted) await sleep(80);
+    // A trade that landed during the move shows up now (the same iteration's
+    // `before` was captured pre-move).
+    if ((await kingLines()) > before) trades += 1;
+    await assertNoErrors(tabA, tabB);
+  }
+  assert.ok(checks >= 8, `hand/count invariant observed ${checks} turn-holder moments`);
+  assert.ok(trades >= 1, `a King trade happened (${trades} trade lines)`);
+  console.log(`  king trade: ${trades} trades, hand area matches the scoreboard across ${checks} turn-holder moments`);
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 2 — full 2-player match to the 7-token target + rematch
 // ---------------------------------------------------------------------------
 
@@ -995,6 +1055,8 @@ async function main(): Promise<void> {
     await runSceneBlocking(base, debugPort);
     console.log('[ui-smoke] select-confirm regret for hand plays (ticket 25)…');
     await runSelectConfirm(base, debugPort);
+    console.log('[ui-smoke] hand area / scoreboard count around King trades (ticket 30)…');
+    await runKingTrade(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');
     await runFullMatch(base, debugPort);
     console.log('[ui-smoke] 3- and 4-player matches…');
@@ -1005,7 +1067,8 @@ async function main(): Promise<void> {
     console.log(
       'UI SMOKE OK — narrow-phone layout, render claims, full 2p match (all 8 cards) + rematch, '
       + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), select-confirm regret '
-      + '(ticket 25), reload/resume with chat restored, no error banners anywhere',
+      + '(ticket 25), hand/count sync around King trades (ticket 30), reload/resume with chat restored, '
+      + 'no error banners anywhere',
     );  } finally {
     if (chrome) {
       chrome.kill();

@@ -155,12 +155,15 @@ function assertPrivacy(...clients: TestClient[]): void {
       if (p.type !== 'event') continue;
       const e = p.event;
       if (
-        (e.type === 'cardDealt' || e.type === 'cardDrawn'
-          || e.type === 'handPeeked' || e.type === 'handTraded')
+        (e.type === 'cardDealt' || e.type === 'cardDrawn' || e.type === 'handPeeked')
         && e.playerId !== c.selfId
         && e.card !== null
       ) {
         throw new Error(`private card leaked to a non-owner: ${e.type} for ${e.playerId} seen by ${c.selfId}`);
+      }
+      // The trade's received-hand payload is private like any other card.
+      if (e.type === 'handTraded' && e.playerId !== c.selfId && e.cards !== null) {
+        throw new Error(`private cards leaked to a non-owner: handTraded for ${e.playerId} seen by ${c.selfId}`);
       }
     }
   }

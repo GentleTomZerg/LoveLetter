@@ -402,10 +402,13 @@ function resolveKingChoice(
   const tmp = actor.hand;
   actor.hand = target.hand;
   target.hand = tmp;
-  // Each trader learns the card they received; others only see that a trade
-  // happened (the card payload is private, like deals and draws).
+  // Each trader learns the cards they received (the full hand — a trade can
+  // hand over an empty hand, e.g. against a Prince'd player on an empty deck);
+  // others only see that a trade happened (the count is public, the cards
+  // private). The array is copied: the state hand is mutated later (plays
+  // splice it), and the event must stay an immutable record in the log.
   for (const [id, hand] of [[actor.id, actor.hand], [target.id, target.hand]] as const) {
-    events.push({ type: 'handTraded', playerId: id, card: hand[0] ?? null, count: hand.length });
+    events.push({ type: 'handTraded', playerId: id, cards: [...hand], count: hand.length });
   }
   enforceCountess(s, actor.id, events);
   enforceCountess(s, target.id, events);

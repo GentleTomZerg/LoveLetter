@@ -556,18 +556,20 @@ function deleteRoom(ctx: ServerContext, code: string): void {
 
 /**
  * Private card payloads (draws, deals, peeks, trades) are public table state —
- * the deck shrinks, a hand is dealt — but the card itself reaches only its
- * owner: everyone else receives `card: null`. The authoritative log keeps the
+ * the deck shrinks, a hand is dealt — but the card(s) reach only their owner:
+ * everyone else receives the payload nulled. The authoritative log keeps the
  * secret; every client tracks the same public state. Replay uses the same
  * filter, so reconnecting never leaks hidden information.
  */
 function filterEvent(event: Event, viewerId: string): Event {
   if (
-    (event.type === 'cardDealt' || event.type === 'cardDrawn'
-      || event.type === 'handPeeked' || event.type === 'handTraded')
+    (event.type === 'cardDealt' || event.type === 'cardDrawn' || event.type === 'handPeeked')
     && event.playerId !== viewerId
   ) {
     return { ...event, card: null };
+  }
+  if (event.type === 'handTraded' && event.playerId !== viewerId) {
+    return { ...event, cards: null };
   }
   return event;
 }

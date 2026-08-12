@@ -147,11 +147,11 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
     view = reduceView(view, { type: 'cardDiscarded', playerId: SELF, card: card(6), reason: 'prince' }, SELF);
     expect(view!.hand).toEqual([]);
 
-    // a King trade replaces the whole hand with the received card
-    view = reduceView(view, { type: 'handTraded', playerId: SELF, card: card(3), count: 1 }, SELF);
+    // a King trade replaces the whole hand with the received cards
+    view = reduceView(view, { type: 'handTraded', playerId: SELF, cards: [card(3)], count: 1 }, SELF);
     expect(view!.hand).toEqual([card(3)]);
-    // …but a trade by someone else never touches my hand
-    view = reduceView(view, { type: 'handTraded', playerId: OTHER, card: null, count: 2 }, SELF);
+    // …but a trade by someone else never touches my hand (the cards stay private)
+    view = reduceView(view, { type: 'handTraded', playerId: OTHER, cards: null, count: 2 }, SELF);
     expect(view!.hand).toEqual([card(3)]);
 
     // elimination reveals drop the revealed card from my hand
@@ -163,6 +163,28 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
 
   it('returns null when there is no view yet (events before snapshot)', () => {
     expect(reduceView(null, { type: 'turnStarted', playerId: 'A' }, SELF)).toBeNull();
+  });
+
+  it('an empty-handed King trade drops the received-empty hand from the view (ticket 30)', () => {
+    // The reported bug: A plays the King against a Prince'd player on an
+    // empty deck, who holds zero cards. A receives an empty hand — the old
+    // `if (event.card)` guard skipped the replacement, leaving A's old card
+    // in the view; the client then clicked a card the server no longer held
+    // ("no card on that position").
+    let view: ViewState | null = buildView(makeGame([p('A'), p('B')], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'cardPlayed', playerId: 'A', which: 0, card: card(6) }, SELF);
+    view = reduceView(view, { type: 'choiceMade', playerId: 'A', choice: { kind: 'king', targetPlayerId: 'B' } }, SELF);
+    view = reduceView(view, { type: 'handTraded', playerId: 'A', cards: [], count: 0 }, SELF);
+    view = reduceView(view, { type: 'handTraded', playerId: 'B', cards: [card(3)], count: 1 }, SELF);
+    // The empty received hand replaces the view hand — no stale card survives.
+    expect(view!.hand).toEqual([]);
+    expect(view!.players.find((x) => x.id === SELF)!.handCount).toBe(0);
+
+    // The turn passes to B, who draws; A's view stays empty and in lockstep.
+    view = reduceView(view, { type: 'turnStarted', playerId: 'B' }, SELF);
+    view = reduceView(view, { type: 'cardDrawn', playerId: 'B', card: card(5) }, SELF);
+    expect(view!.hand).toEqual([]);
+    expect(view!.players.find((x) => x.id === SELF)!.handCount).toBe(0);
   });
 
   it('tracks every player’s public hand count through a full round (issue 13)', () => {
@@ -190,8 +212,8 @@ describe('reduceView: a full Guard-only round from A’s perspective', () => {
 
     // A King trade swaps unequal hands: A (1) ↔ B (0). The count travels
     // with the received hand, so B's trade event carries the new size.
-    view = reduceView(view, { type: 'handTraded', playerId: 'A', card: null, count: 0 }, SELF);
-    view = reduceView(view, { type: 'handTraded', playerId: 'B', card: card(1), count: 1 }, SELF);
+    view = reduceView(view, { type: 'handTraded', playerId: 'A', cards: null, count: 0 }, SELF);
+    view = reduceView(view, { type: 'handTraded', playerId: 'B', cards: [card(1)], count: 1 }, SELF);
     expect(view!.players.map((p) => p.handCount)).toEqual([0, 1]);
 
     // B draws back to two, then is eliminated: the reveal drops them to zero.

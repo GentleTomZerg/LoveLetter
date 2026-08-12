@@ -258,11 +258,15 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       break;
 
     case 'handTraded':
-      // A trade replaces your whole hand; others only learn it happened.
-      // Hand size is public, so the event carries the received hand's count
-      // (King can swap unequal hands — e.g. after a forced Countess discard).
+      // A trade replaces the whole hand. The received cards travel in the
+      // private payload (the actor's own stream only); hand size is public,
+      // so the event also carries `count` for everyone else. The received
+      // hand can be empty (a King trade against a Prince'd player on an
+      // empty deck) — the rebuild must run even then, or a stale card stays
+      // in the view and the client would click a card the server no longer
+      // holds (ticket 30).
       v.players.find((p) => p.id === event.playerId)!.handCount = event.count;
-      if (event.playerId === selfId && event.card) v.hand = [event.card];
+      if (event.playerId === selfId && event.cards !== null) v.hand = [...event.cards];
       break;
 
     case 'handPeeked': {
