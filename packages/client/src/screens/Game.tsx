@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Card, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Rank, ViewState } from '@love-letter/core';
 import type { Game } from '../useGame';
 import { useLocale, joinLocalizedList } from '../i18n';
-import { formatLogEntry, entryRank, latestLogEntry, type LogContext } from '../i18n/logFormat';
+import { formatLogEntry, entryRank, mergeLog, type ActivityLine, type LogContext } from '../i18n/logFormat';
 import { PlayScenes, usePlayScenes } from './PlayScenes';
 
 export function Game({ view, selfId, game }: { view: ViewState; selfId: string; game: Game }) {
@@ -127,6 +127,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
           <Log
             log={view.log}
             activity={game.activity}
+            logArrivals={game.logArrivals}
             selfId={selfId}
             roster={view.roster}
             beat={scenes.currentEntry}
@@ -484,28 +485,33 @@ function ChoicePanel({
  * Ticket 24: while a scene animates, the strip shows the **beat** — the log
  * entry the current scene narrates — so it never races ahead of the
  * animation (the win line lands only when the win banner plays). Idle or
- * reduced-motion (no scenes enqueue) → the latest entry, exactly as before.
+ * reduced-motion (no scenes enqueue) → the newest entry by socket arrival,
+ * exactly as before.
+ *
+ * Ticket 31: the game log and room activity share a socket arrival clock
+ * (`logArrivals` + the activity lines' stamps), so "newest" is one ordered
+ * list — a reconnect line wins the strip only until the next game entry
+ * lands, instead of permanently.
  */
 function Log({
   log,
   activity,
+  logArrivals,
   selfId,
   roster,
   beat,
 }: {
   log: LogEntry[];
-  activity: LogEntry[];
+  activity: ActivityLine[];
+  logArrivals: Record<number, number>;
   selfId: string;
   roster: Record<string, string>;
   beat: LogEntry | undefined;
 }) {
   const { t, cardName } = useLocale();
   const ctx: LogContext = { selfId, roster, t, cardName };
-  const all = [
-    ...log.map((e) => ({ ...e, key: `v${e.id}` })),
-    ...activity.map((e) => ({ ...e, key: `a${e.id}` })),
-  ];
-  const strip = beat ?? latestLogEntry(log, activity);
+  const merged = mergeLog(log, activity, logArrivals);
+  const strip = beat ?? merged[0]?.entry;
   const stripRank = strip !== undefined ? entryRank(strip) : undefined;
   return (
     <details className="panel log-panel">
@@ -516,8 +522,8 @@ function Log({
         </span>
       </summary>
       <ul className="log">
-        {[...all].reverse().map((entry) => (
-          <li key={entry.key} className={`log-${entry.kind}`}>
+        {merged.map(({ key, entry }) => (
+          <li key={key} className={`log-${entry.kind}`}>
             {formatLogEntry(entry, ctx)}
           </li>
         ))}

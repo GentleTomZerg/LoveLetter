@@ -19,11 +19,11 @@ import type {
   ChatMessage,
   Choice,
   ClientPacket,
-  LogEntry,
   ServerPacket,
   ViewState,
   WireParams,
 } from '@love-letter/core';
+import type { ActivityLine } from './i18n/logFormat';
 
 export type ConnStatus = 'connecting' | 'open' | 'closed';
 
@@ -50,8 +50,13 @@ export interface GameState {
   /** Seats whose sockets are currently dropped — the away badges (issue 11). */
   away: string[];
   /** Room-layer status lines (disconnects/reconnects), shown with the log. */
-  activity: LogEntry[];
+  activity: ActivityLine[];
   activitySeq: number;
+  /** The socket arrival order — the shared clock that orders the game log
+   *  and room activity into one "newest" (ticket 31). */
+  arrivalSeq: number;
+  /** Log entry id → its arrival order (ticket 31). */
+  logArrivals: Record<number, number>;
   /** Set when the server tears the room down under us (issue 11). */
   roomClosed: WireError | null;
   /** True after an intentional leave; the tab is back on Home with a fresh socket. */
@@ -95,29 +100,44 @@ function reducer(state: GameState, action: Action): GameState {
             : state;
         case 'event':
           return state.view !== null && state.selfId !== null && p.id > state.lastEventId
-            ? {
-              ...state,
-              view: reduceView(state.view, p.event, state.selfId),
-              lastEventId: p.id,
-            }
+            ? (() => {
+              const before = state.view.log.length;
+              // The guard above guarantees a non-null view, so the fold cannot
+              // return null here.
+              const next = reduceView(state.view, p.event, state.selfId)!;
+              // One event folds at most one log entry — stamp it with the
+              // socket arrival order (ticket 31), so "newest" is comparable
+              // with the activity lines below.
+              let { arrivalSeq, logArrivals } = state;
+              if (next.log.length > before) {
+                const entry = next.log[next.log.length - 1]!;
+                arrivalSeq += 1;
+                logArrivals = { ...logArrivals, [entry.id]: arrivalSeq };
+              }
+              return { ...state, view: next, lastEventId: p.id, arrivalSeq, logArrivals };
+            })()
             : state;
         case 'chat':
           return { ...state, chat: [...state.chat, p.message] };
         case 'chatLog':
           return { ...state, chat: [...p.messages] };
         case 'playerGone': {
-          const line: LogEntry = { id: state.activitySeq, kind: 'info', params: { what: 'playerGone', name: p.name } };
+          const arrival = state.arrivalSeq + 1;
+          const line: ActivityLine = { id: state.activitySeq, kind: 'info', params: { what: 'playerGone', name: p.name }, arrival };
           return {
             ...state,
+            arrivalSeq: arrival,
             away: state.away.includes(p.playerId) ? state.away : [...state.away, p.playerId],
             activity: [...state.activity, line].slice(-50),
             activitySeq: state.activitySeq + 1,
           };
         }
         case 'playerBack': {
-          const line: LogEntry = { id: state.activitySeq, kind: 'info', params: { what: 'playerBack', name: p.name } };
+          const arrival = state.arrivalSeq + 1;
+          const line: ActivityLine = { id: state.activitySeq, kind: 'info', params: { what: 'playerBack', name: p.name }, arrival };
           return {
             ...state,
+            arrivalSeq: arrival,
             away: state.away.filter((id) => id !== p.playerId),
             activity: [...state.activity, line].slice(-50),
             activitySeq: state.activitySeq + 1,
@@ -143,6 +163,8 @@ const initial: GameState = {
   away: [],
   activity: [],
   activitySeq: 0,
+  arrivalSeq: 0,
+  logArrivals: {},
   roomClosed: null,
   left: false,
   session: 0,

@@ -1023,6 +1023,15 @@ async function runReloadResume(base: string, debugPort: number): Promise<void> {
     async () => (await tabB.eval(`document.querySelectorAll('.log li').length`)) > logLen,
     500,
   );
+
+  // Ticket 31: tabB saw "Alice reconnected" (a room-activity line), but the
+  // reconnect line must not permanently own the strip — once the resumed
+  // seat plays again and the scene drains, the strip shows the newest game
+  // entry, not the reconnect notice. (Scenes pause the strip on the beat, so
+  // the check must wait for the queue to drain first.)
+  await waitFor(tabB, `document.querySelectorAll('.scenes .scene').length === 0`, 20000, 'scenes drain after resume');
+  const strip = (await tabB.eval(`document.querySelector('.log-strip-text')?.textContent ?? ''`)) as string;
+  assert.ok(!strip.includes('reconnected'), `strip returned to the game after a move: ${strip}`);
   await assertNoErrors(tabA, tabB);
 }
 

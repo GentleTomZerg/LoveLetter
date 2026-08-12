@@ -6,10 +6,14 @@
 
 import { describe, expect, it } from 'vitest';
 import type { LogEntry } from '@love-letter/core';
-import { entryRank, latestLogEntry } from './logFormat';
+import { entryRank, latestLogEntry, mergeLog, type ActivityLine } from './logFormat';
 
 const play = (id: number, rank: number): LogEntry => ({ id, kind: 'play', params: { playerId: 'A', rank } });
 const info = (id: number, what: string): LogEntry => ({ id, kind: 'info', params: { what } });
+/** An activity line with its socket arrival stamp (ticket 31). */
+const line = (id: number, what: string, arrival: number): ActivityLine => ({ ...info(id, what), arrival });
+/** The entry without client-side stamps — for equality checks. */
+const plain = (e: LogEntry) => ({ id: e.id, kind: e.kind, params: e.params });
 
 describe('entryRank (ticket 19)', () => {
   it('returns the rank for rank-bearing kinds', () => {
@@ -35,18 +39,46 @@ describe('entryRank (ticket 19)', () => {
   });
 });
 
-describe('latestLogEntry (ticket 19)', () => {
-  it('prefers the newest activity line when any exist', () => {
-    const log = [play(1, 3), play(2, 5)];
-    const activity = [info(0, 'playerGone'), info(1, 'playerBack')];
-    expect(latestLogEntry(log, activity)).toEqual(info(1, 'playerBack'));
+describe('latestLogEntry (tickets 19 + 31)', () => {
+  it('shows the newest by socket arrival across both sequences', () => {
+    // A reconnect line that arrived last wins…
+    const log = [play(1, 3)];
+    const activity = [line(0, 'playerGone', 2), line(1, 'playerBack', 3)];
+    expect(plain(latestLogEntry(log, activity, { 1: 1 })!)).toEqual(plain(info(1, 'playerBack')));
+    // …but a game entry landing after it takes the strip straight back
+    // (the old code preferred activity forever — ticket 31).
+    const log2 = [play(1, 3), play(2, 5)];
+    expect(latestLogEntry(log2, activity, { 1: 1, 2: 4 })).toEqual(play(2, 5));
+    // And an activity line arriving after the log entry wins again.
+    const activity2 = [...activity, line(2, 'playerGone', 5)];
+    expect(plain(latestLogEntry(log2, activity2, { 1: 1, 2: 4 })!)).toEqual(plain(info(2, 'playerGone')));
   });
 
   it('falls back to the newest log entry when activity is empty', () => {
-    expect(latestLogEntry([play(1, 3), play(2, 5)], [])).toEqual(play(2, 5));
+    expect(latestLogEntry([play(1, 3), play(2, 5)], [], { 1: 1, 2: 2 })).toEqual(play(2, 5));
   });
 
   it('is undefined when both sequences are empty (lobby placeholder)', () => {
-    expect(latestLogEntry([], [])).toBeUndefined();
+    expect(latestLogEntry([], [], {})).toBeUndefined();
+  });
+});
+
+describe('mergeLog (ticket 31)', () => {
+  it('orders the expanded list newest-first across both sequences, with stable keys', () => {
+    const log = [play(1, 3), play(2, 5)];
+    const activity = [line(0, 'playerGone', 3), line(1, 'playerBack', 5)];
+    const merged = mergeLog(log, activity, { 1: 1, 2: 2 });
+    expect(merged.map((m) => plain(m.entry))).toEqual([
+      plain(info(1, 'playerBack')),
+      plain(info(0, 'playerGone')),
+      plain(play(2, 5)),
+      plain(play(1, 3)),
+    ]);
+    expect(merged.map((m) => m.key)).toEqual(['a1', 'a0', 'v2', 'v1']);
+  });
+
+  it('sorts entries without an arrival stamp as the oldest (defensive)', () => {
+    const merged = mergeLog([play(2, 5)], [line(0, 'playerBack', 3)], {});
+    expect(merged.map((m) => plain(m.entry))).toEqual([plain(info(0, 'playerBack')), plain(play(2, 5))]);
   });
 });

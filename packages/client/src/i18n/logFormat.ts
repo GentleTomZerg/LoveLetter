@@ -42,16 +42,49 @@ export function entryRank(entry: LogEntry): Rank | undefined {
 }
 
 /**
- * The single newest entry across the game log and room activity — the
- * collapsed strip's content. Both sequences run oldest→newest; activity
- * lines are client-generated from live packets and share no clock with the
- * server log, so the strip follows the expanded list's convention: the
- * newest activity line when any exist, else the newest log entry — the same
- * entry the expanded list shows first. Undefined when both are empty (the
- * lobby placeholder).
+ * A room-activity line (issue 11) with its socket arrival stamp — the shared
+ * clock that orders it against the game log (ticket 31).
  */
-export function latestLogEntry(log: LogEntry[], activity: LogEntry[]): LogEntry | undefined {
-  return activity.length > 0 ? activity[activity.length - 1]! : log[log.length - 1];
+export interface ActivityLine extends LogEntry { arrival: number }
+
+/** One merged display line: the entry, its stable DOM key, and its arrival. */
+export interface MergedEntry {
+  key: string;
+  entry: LogEntry;
+  arrival: number;
+}
+
+/**
+ * Merge the game log and room activity into one newest-first list, ordered
+ * by socket arrival (ticket 31). The two sequences share no clock of their
+ * own, but every entry arrived through the same socket in order, so the
+ * client-assigned arrival stamp is the truth for "newest": an activity line
+ * wins only until a later game event lands, and vice versa. Entries without
+ * an arrival stamp (defensive) sort as the oldest.
+ */
+export function mergeLog(
+  log: LogEntry[],
+  activity: ActivityLine[],
+  logArrivals: Record<number, number>,
+): MergedEntry[] {
+  const all: MergedEntry[] = [
+    ...log.map((entry) => ({ key: `v${entry.id}`, entry, arrival: logArrivals[entry.id] ?? -1 })),
+    ...activity.map((entry) => ({ key: `a${entry.id}`, entry, arrival: entry.arrival })),
+  ];
+  return all.sort((a, b) => b.arrival - a.arrival);
+}
+
+/**
+ * The single newest entry across the game log and room activity — the
+ * collapsed strip's content, newest by socket arrival (ticket 31). Undefined
+ * when both sequences are empty (the lobby placeholder).
+ */
+export function latestLogEntry(
+  log: LogEntry[],
+  activity: ActivityLine[],
+  logArrivals: Record<number, number>,
+): LogEntry | undefined {
+  return mergeLog(log, activity, logArrivals)[0]?.entry;
 }
 
 export function formatLogEntry(entry: LogEntry, ctx: LogContext): string {
