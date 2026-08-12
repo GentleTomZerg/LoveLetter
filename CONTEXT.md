@@ -34,6 +34,10 @@ _Avoid_: point, heart, win
 **Grace**:
 The 60-second window after a socket drop during which a player's seat is held. If their turn comes and they're still gone, they're folded out of the round; the seat is kept for the next round.
 
+**Seat**:
+A player's place at the table, carrying their public state — tokens, discards, hand count, and status (protected, out, reconnecting). Every player has exactly one; the viewer's own seat is their play area at the bottom of the stage, opponents' seats ring the table.
+_Avoid_: dashboard (a seat is one concept whether it is the viewer's own or an opponent's)
+
 **Protected**:
 A player under the Handmaid's effect, unchoosable by other players' cards until the start of their next turn. Does not block their own Prince or the Countess.
 
