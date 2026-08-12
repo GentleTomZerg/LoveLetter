@@ -15,6 +15,11 @@
  *               drain; the strip follows the animating beat (the win line
  *               appears only when the win banner plays); under reduced motion
  *               nothing enqueues, so the round never blocks.
+ *  - selectConfirm  ticket 25: hand plays are select-confirm — clicking a
+ *               card selects it (highlight + a Play action bar naming it),
+ *               clicking the other card switches the selection, and nothing
+ *               is sent until the confirm; the log gains exactly one play
+ *               line and the bar clears.
  *  - logStrip   the log is a top bar fixed at the top of the viewport (issue
  *               21) collapsing to a latest-event strip and expanding in place
  *               (ticket 19): the strip shows the newest entry, tracks live
@@ -107,10 +112,19 @@ async function assertNoErrors(...tabs: CdpSession[]): Promise<void> {
 
 /** One legal move on this tab, if it is that tab's turn. The Guard's card
  *  options are tried before its target row: the target row stays visible
- *  after a pick, so the card row must win whenever it exists. */
+ *  after a pick, so the card row must win whenever it exists.
+ *
+ *  Ticket 25: the hand is select-confirm — clicking a card only selects it,
+ *  so the confirm bar click must follow in the same step (the play leaves
+ *  only after the confirm; a selected-but-unconfirmed card would be
+ *  deselected by the next hand click). */
 async function playOneMove(tab: CdpSession): Promise<boolean> {
   if (await click(tab, '.round-over button')) return true; // start next round
-  if (await click(tab, 'button.card.playable')) return true; // play from the hand
+  if (await click(tab, 'button.card.playable')) {
+    if (await click(tab, '.play-confirm')) return true; // select + confirm
+    await click(tab, 'button.card.playable.selected'); // no bar — deselect and retry
+    return false;
+  }
   if (await click(tab, '.choice-row.cards button')) return true; // Guard: name a card
   if (await click(tab, '.choice-row button')) return true; // target pickers
   return false;
@@ -713,6 +727,97 @@ async function runSceneBlocking(base: string, debugPort: number): Promise<void> 
 }
 
 // ---------------------------------------------------------------------------
+// Scenario — ticket 25: select-confirm regret for hand plays. Clicking a
+// playable card selects it (a highlight + the fixed Play action bar naming
+// the card); clicking the other card switches the selection; nothing is sent
+// until the confirm — the log gains exactly one play line, then the bar
+// clears and the played card leaves the hand.
+// ---------------------------------------------------------------------------
+
+async function runSelectConfirm(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+  // The selection is pure React state — no animation involved. Motion off
+  // keeps the round fast (no ~2.5s scene pauses per move).
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+
+  // Every player holds exactly two cards at the start of their turn (the
+  // turn-start draw) — wait until Alice's turn is live with two cards. (A
+  // forced-Countess draw can leave a 1-card turn, so the exact-2 condition
+  // is what pins down a real switchable hand.)
+  await playUntil(
+    [tabA, tabB],
+    () => tabA.eval(
+      `document.querySelectorAll('.hand button.card').length === 2
+       && document.querySelectorAll('.hand button.card.playable').length === 2
+       && document.querySelector('.seat.turn.me') !== null`,
+    ),
+    1200,
+  );
+
+  const selectedIndex = () =>
+    tabA.eval(
+      `[...document.querySelectorAll('.hand button.card')].findIndex((b) => b.classList.contains('selected'))`,
+    ) as Promise<number>;
+  const confirmLabel = () =>
+    tabA.eval(`document.querySelector('.play-confirm')?.textContent?.trim() ?? null`) as Promise<string | null>;
+  const playLines = () => tabA.eval(`document.querySelectorAll('.log li.log-play').length`) as Promise<number>;
+  const nameAt = (i: number) =>
+    tabA.eval(
+      `document.querySelectorAll('.hand button.card')[${i}]?.querySelector('.name-caption')?.textContent ?? null`,
+    ) as Promise<string | null>;
+  const card0 = await nameAt(0);
+  const card1 = await nameAt(1);
+  assert.ok(card0 !== null && card1 !== null, 'both hand cards have names');
+
+  // 1. Select: no confirm bar before any selection; clicking a card raises
+  //    the bar naming it — and nothing is sent (no new play line).
+  assert.equal(
+    await tabA.eval(`document.querySelector('.play-confirm') === null`),
+    true,
+    'no confirm bar before a selection',
+  );
+  await click(tabA, '.hand button.card');
+  await waitFor(tabA, `document.querySelector('.play-confirm') !== null`, 5000, 'confirm bar appears on selection');
+  assert.equal(await selectedIndex(), 0, 'the first card is selected');
+  assert.equal(await confirmLabel(), `Play ${card0}`, 'confirm bar names the selected card');
+  const playsBefore = await playLines();
+  await sleep(200); // a beat — still nothing may have been sent
+  assert.equal(await playLines(), playsBefore, 'selecting never sends a play');
+
+  // 2. Switch: clicking the other card moves the highlight and re-labels the
+  //    bar; still nothing sent. (Two identical cards can share a name — the
+  //    selected-position check is what proves the switch.)
+  await tabA.eval(`document.querySelectorAll('.hand button.card')[1].click()`);
+  await waitFor(
+    tabA,
+    `[...document.querySelectorAll('.hand button.card')].findIndex((b) => b.classList.contains('selected')) === 1`,
+    5000,
+    'selection switches to the other card',
+  );
+  assert.equal(await confirmLabel(), `Play ${card1}`, 'confirm bar re-labels the switched card');
+  assert.equal(await playLines(), playsBefore, 'switching never sends a play');
+
+  // 3. Confirm: exactly one play line lands, the bar clears, the played card
+  //    leaves the hand (a deck-empty round can reveal the last card in the
+  //    same burst — only the strict drop is asserted).
+  const handBefore = (await tabA.eval(`document.querySelectorAll('.hand button.card').length`)) as number;
+  await click(tabA, '.play-confirm');
+  await waitFor(
+    tabA,
+    `document.querySelectorAll('.log li.log-play').length === ${playsBefore + 1}`,
+    10000,
+    'exactly one play line after confirm',
+  );
+  assert.equal(await confirmLabel(), null, 'confirm bar clears after the play');
+  const handAfter = (await tabA.eval(`document.querySelectorAll('.hand button.card').length`)) as number;
+  assert.ok(handAfter < handBefore, 'the played card left the hand');
+  await assertNoErrors(tabA, tabB);
+  console.log(`  select → switch → confirm: one play of ${card1} sent, nothing before it`);
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 2 — full 2-player match to the 7-token target + rematch
 // ---------------------------------------------------------------------------
 
@@ -888,6 +993,8 @@ async function main(): Promise<void> {
     await runSceneAnimations(base, debugPort);
     console.log('[ui-smoke] strip follows the scene, the round waits (ticket 24)…');
     await runSceneBlocking(base, debugPort);
+    console.log('[ui-smoke] select-confirm regret for hand plays (ticket 25)…');
+    await runSelectConfirm(base, debugPort);
     console.log('[ui-smoke] full 2-player match to 7 tokens + rematch…');
     await runFullMatch(base, debugPort);
     console.log('[ui-smoke] 3- and 4-player matches…');
@@ -897,8 +1004,8 @@ async function main(): Promise<void> {
 
     console.log(
       'UI SMOKE OK — narrow-phone layout, render claims, full 2p match (all 8 cards) + rematch, '
-      + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), reload/resume with chat '
-      + 'restored, no error banners anywhere',
+      + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), select-confirm regret '
+      + '(ticket 25), reload/resume with chat restored, no error banners anywhere',
     );  } finally {
     if (chrome) {
       chrome.kill();

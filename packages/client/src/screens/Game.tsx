@@ -15,6 +15,14 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
   const canPlay = view.phase === 'round' && myTurn && view.pendingChoice === null && !scenes.busy;
   const myChoice = view.pendingChoice !== null && view.pendingChoice.playerId === selfId;
 
+  // Ticket 25: selecting a hand card is a pending local choice — regret
+  // before the send. The selection resets whenever the world changes under
+  // it: the turn passes, a pending choice opens, the phase moves, or the
+  // hand itself reshapes (a stale index would highlight the wrong card).
+  const [selected, setSelected] = useState<number | null>(null);
+  const handKey = view.hand.map((c) => `${c.rank}:${c.name}`).join(',');
+  useEffect(() => setSelected(null), [handKey, view.currentTurn, view.pendingChoice, view.phase]);
+
   const playerName = (id: string) =>
     id === selfId ? t('common.you') : (view.players.find((p) => p.id === id)?.name ?? id);
 
@@ -49,10 +57,28 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
                   key={i}
                   card={card}
                   playable={canPlay}
-                  onClick={() => game.sendPlayCard(i as 0 | 1)}
+                  selected={selected === i}
+                  onClick={() => setSelected(selected === i ? null : i)}
                 />
               ))}
             </div>
+
+            {/* Ticket 25: the fixed Play action bar — appears only while a
+                card is selected, confirms exactly one play, then clears. */}
+            {selected !== null && canPlay && selected < view.hand.length && (
+              <div className="play-bar">
+                <button
+                  className="play-confirm"
+                  onClick={() => {
+                    const which = selected as 0 | 1;
+                    setSelected(null);
+                    game.sendPlayCard(which);
+                  }}
+                >
+                  {t('game.playCard', { card: cardName(view.hand[selected]!.rank) })}
+                </button>
+              </div>
+            )}
 
             {view.pendingChoice && (
               <ChoicePanel
@@ -134,11 +160,11 @@ function CardThumb({ rank, className }: { rank: Rank; className?: string }) {
   );
 }
 
-function CardView({ card, playable, onClick }: { card: Card; playable: boolean; onClick: () => void }) {
+function CardView({ card, playable, selected, onClick }: { card: Card; playable: boolean; selected: boolean; onClick: () => void }) {
   const { cardName } = useLocale();
   return (
     <button
-      className={`card art ${playable ? 'playable' : ''}`}
+      className={`card art ${playable ? 'playable' : ''} ${selected ? 'selected' : ''}`}
       onClick={onClick}
       disabled={!playable}
     >
