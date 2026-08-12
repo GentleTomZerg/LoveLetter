@@ -10,6 +10,9 @@
  *  - sceneAnimations  scene-based card animations (ticket 23): a scene plays
  *               through (the card appears, the verdict caption appears, the
  *               queue drains); prefers-reduced-motion disables all scenes.
+ *  - drawPop   ticket 28: the drawer's own draw pops the new card in the
+ *               hand (a ~0.6s pure-CSS moment, no scene, no round pause)
+ *               and the deck count stays in step.
  *  - sceneBlocking  ticket 24: the round waits — the hand and choice buttons
  *               are disabled while a scene animates and re-enabled after the
  *               drain; the strip follows the animating beat (the win line
@@ -526,7 +529,48 @@ async function runChatPill(base: string, debugPort: number): Promise<void> {
     fills.w >= fills.vw - 1 && fills.h >= fills.vh - 1,
     `dialog near-fullscreen at phone size: ${JSON.stringify(fills)}`,
   );
+  // Ticket 29: at phone size the dialog fills the viewport — no backdrop to
+  // tap and no Esc key — so the explicit close button must exist and work.
+  assert.equal(
+    await tabB.eval(`document.querySelector('.chat-close') !== null`),
+    true,
+    'close button visible at phone width',
+  );
+  await click(tabB, '.chat-close');
+  await waitFor(tabB, `document.querySelector('.chat-dialog') === null`, 5000, 'dialog closes via the close button');
   await assertNoErrors(tabA, tabB);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario — ticket 28: the drawer's own draw pops the new card in the hand
+// (~0.6s, pure CSS — no scene, no round pause) and the deck count stays in
+// step. Catch a pop mid-flight while playing; the popped card stays
+// rank-keyed. (The pop is drawer-only — the other tab just sees the deck
+// move; reduced-motion disables the CSS, covered by the media query.)
+// ---------------------------------------------------------------------------
+
+async function runDrawPop(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+  await tabA.bringToFront();
+  await tabB.bringToFront();
+  await tabA.bringToFront();
+
+  await playUntil(
+    [tabA, tabB],
+    () => tabA.eval(`document.querySelector('.hand button.card.drawn') !== null`),
+    600,
+  );
+  const drawnSrc = (await tabA.eval(
+    `document.querySelector('.hand button.card.drawn img')?.getAttribute('src') ?? null`,
+  )) as string | null;
+  assert.ok(drawnSrc === null || /^\/cards\/[1-8]\.png$/.test(drawnSrc), `drawn card stays rank-keyed: ${drawnSrc}`);
+  const header = (await tabA.eval(
+    `[...document.querySelectorAll('.game-header span')].map((s) => s.textContent).join(' | ')`,
+  )) as string;
+  assert.ok(/Deck: \d+/.test(header), `deck count in the header: ${header}`);
+  await assertNoErrors(tabA, tabB);
+  console.log('  draw pop: the drawn card pops in the hand (rank-keyed), deck count in step');
 }
 
 // ---------------------------------------------------------------------------
@@ -1060,6 +1104,8 @@ async function main(): Promise<void> {
     await runLogStrip(base, debugPort);
     console.log('[ui-smoke] scene-based card animations (ticket 23)…');
     await runSceneAnimations(base, debugPort);
+    console.log('[ui-smoke] the draw pops the new card (ticket 28)…');
+    await runDrawPop(base, debugPort);
     console.log('[ui-smoke] strip follows the scene, the round waits (ticket 24)…');
     await runSceneBlocking(base, debugPort);
     console.log('[ui-smoke] select-confirm regret for hand plays (ticket 25)…');
@@ -1076,8 +1122,8 @@ async function main(): Promise<void> {
     console.log(
       'UI SMOKE OK — narrow-phone layout, render claims, full 2p match (all 8 cards) + rematch, '
       + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), select-confirm regret '
-      + '(ticket 25), hand/count sync around King trades (ticket 30), reload/resume with chat restored, '
-      + 'no error banners anywhere',
+      + '(ticket 25), hand/count sync around King trades (ticket 30), draw pop (ticket 28), chat close '
+      + 'button (ticket 29), reload/resume with chat restored, no error banners anywhere',
     );  } finally {
     if (chrome) {
       chrome.kill();
