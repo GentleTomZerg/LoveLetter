@@ -283,14 +283,15 @@ button:disabled {
   padding: 0.35rem;
 }
 
-/* The tabletop ring: seats around a center table. 2p is a duel (opponent
-   top, you at the dock), 3p a triangle, 4p a 2×2 square. `margin: auto`
-   centers the ring when the band has room and collapses so the band scrolls
-   (without clipping the top) when it doesn't. */
+/* The tabletop: opponents across the top around a center table. The viewer
+   is always the dock (ticket 35) — 2p is one opponent across, 3p two
+   corners, 4p three across. `margin: auto` centers the grid when the band
+   has room and collapses so the band scrolls (without clipping the top)
+   when it doesn't. */
 .tabletop {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0.4rem;
   align-items: center;
   justify-items: center;
@@ -301,34 +302,30 @@ button:disabled {
 .tabletop.duel {
   grid-template-areas:
     ". top ."
-    ". table ."
-    ". me .";
+    ". table .";
 }
 
-.tabletop.triangle {
-  grid-template-areas:
-    ". top ."
-    ". table ."
-    "bl . br";
-}
-
-.tabletop.square {
+.tabletop.three {
   grid-template-areas:
     "tl . tr"
-    ". table ."
-    "bl . br";
+    ". table .";
+}
+
+.tabletop.four {
+  grid-template-areas:
+    "tl top tr"
+    ". table .";
 }
 
 .seat.pos-top { grid-area: top; }
-.seat.pos-me { grid-area: me; }
-.seat.pos-bl { grid-area: bl; }
-.seat.pos-br { grid-area: br; }
 .seat.pos-tl { grid-area: tl; }
 .seat.pos-tr { grid-area: tr; }
 .center-table { grid-area: table; }
 
-/* One compact seat tile per player (issue 14 content, re-laid-out for the
-   ring): name / hearts / turn / protected-out / discards / hand count. */
+/* One compact seat tile per opponent (issue 14 content, re-laid-out for the
+   top row): name / hearts / turn / protected-out / discards / hand count.
+   Ticket 35: the viewer's own seat is the dock, so the ring tiles grew to
+   ~20rem and the pile keeps its compressed thumbs. */
 .tabletop .seat {
   display: flex;
   flex-direction: column;
@@ -338,21 +335,29 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   text-align: center;
-  width: min(100%, 14rem);
+  width: min(100%, 20rem);
 }
-
-.tabletop .seat.me {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
 /* The active player's tile is highlighted AND carries a "turn" pill — the
    signal never relies on color alone (issue 14). */
 .tabletop .seat.turn {
   border-color: var(--ok);
   box-shadow: 0 0 0 2px var(--ok-soft);
+}
+
+/* Ticket 35: tap-the-seat — while the viewer holds a pending choice, the
+   legal target seats light up (a tap resolves it); the Guard's chosen
+   target fills in. */
+.tabletop .seat.chooseable {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  cursor: pointer;
+}
+
+.tabletop .seat.chosen {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .tabletop .seat.out {
@@ -407,17 +412,21 @@ button:disabled {
   justify-content: center;
 }
 
-/* Overlap + drop shadow so a multi-card pile reads as a stack of cards. */
-.tabletop .seat .pile img {
+/* Overlap + drop shadow so a multi-card pile reads as a stack of cards.
+   Ticket 35: tighter overlap — a full 16-card pile reads as one compact row
+   (the thumbs stay readable; shrinking the deduction surface was rejected).
+   One rule for the ring tiles and the viewer's dock — same thumb size, so
+   the two never drift (review: Q3(a)). */
+.seat .pile img {
   width: 2.2rem;
   border-radius: 4px;
   border: 1px solid var(--line);
   display: block;
-  margin-left: -1.1rem;
+  margin-left: -1.4rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.tabletop .seat .pile img:first-child {
+.seat .pile img:first-child {
   margin-left: 0;
 }
 
@@ -573,8 +582,39 @@ button:disabled {
   display: none;
 }
 
-.choice-slot .panel {
-  width: min(100%, 30rem);
+/* Ticket 35: the choice slot holds a thin hint line — the targets are the
+   lit seats (tap-the-seat). The Guard's second step is a chip row under a
+   "which card" prompt. */
+.choice-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.choice-hint {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.choice-hint.muted {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.choice-chips {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.choice-chips button {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 999px;
 }
 
 .hand-dock {
@@ -582,6 +622,76 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   gap: 0.35rem;
+}
+
+/* --- Ticket 35: the dock IS the viewer's seat — a compact seat row (name /
+   tokens / badges / own pile / hand count) above the hand. It carries the
+   same `.seat` + `data-player-id` hooks as the ring tiles so the card
+   scenes anchor to it, and the `.turn`/`.me` classes the smoke relies on. --- */
+.dock-seat {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.6rem 0.5rem;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.dock-seat.me {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dock-seat.turn {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 2px var(--ok-soft);
+}
+
+.dock-seat.out {
+  opacity: 0.55;
+  transition: opacity 0.5s ease;
+}
+
+/* Ticket 35: tap-the-seat — the dock's resting state is already the accent
+   border, so a lit dock gets a soft halo instead of a border change. */
+.dock-seat.chooseable {
+  cursor: pointer;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.dock-seat .seat-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.dock-seat .seat-row .name {
+  font-weight: 700;
+}
+
+.dock-seat .seat-row .tokens {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dock-seat .seat-cards {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* The dock's own discard pile — compact, like the opponents' piles (same
+   `.seat .pile img` rule above; the container just lays them out inline). */
+.dock-seat .pile {
+  display: flex;
+  align-items: center;
 }
 
 .hand {
@@ -620,17 +730,32 @@ button:disabled {
   display: block;
 }
 
-.card.art .rank-badge {
+/* Ticket 35: the top-right rank badge is gone (the art carries the rank
+   numeral); the selected card raises a small Play chip in that corner — one
+   tap confirms, tapping elsewhere switches/deselects (ticket-25 regret). */
+.card-slot {
+  position: relative;
+}
+
+.play-chip {
   position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-  background: rgba(255, 255, 255, 0.92);
-  border-radius: 6px;
-  font-size: 1.15rem;
+  top: -0.55rem;
+  right: -0.55rem;
+  z-index: 2;
+  padding: 0.3rem 0.85rem;
+  font: inherit;
+  font-size: 0.9rem;
   font-weight: 800;
-  line-height: 1.2;
-  padding: 0.1rem 0.45rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+}
+
+.play-chip:hover {
+  background: #f0d6d0;
 }
 
 .card.art .name-caption {
@@ -714,29 +839,8 @@ button:disabled {
   }
 }
 
-/* Ticket 25: the fixed Play action bar under the hand — appears only while
-   a card is selected; confirms exactly one play, then disappears. */
-.play-bar {
-  display: flex;
-  justify-content: center;
-}
-
-.play-confirm {
-  min-width: 12rem;
-  padding: 0.65rem 1.4rem;
-  font: inherit;
-  font-size: 1.05rem;
-  font-weight: 700;
-  border: 2px solid var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.play-confirm:hover {
-  background: #f0d6d0;
-}
+/* Ticket 35: the full-width Play bar (ticket 25) is replaced by the on-card
+   chip; the hand dock now rides inside the viewer's seat. */
 
 /* --- The center table (ticket 33, Q8): the deck as a physical card-back
    stack with its count (the ticket-28 draw anchor), the face-down burned
@@ -758,8 +862,8 @@ button:disabled {
 }
 
 .deck-back {
-  width: 3.4rem;
-  border-radius: 6px;
+  width: 2.3rem;
+  border-radius: 5px;
   border: 1px solid var(--line);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
   display: block;
@@ -770,8 +874,8 @@ button:disabled {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 0.05rem 0.55rem;
-  font-size: 0.85rem;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.75rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
@@ -784,7 +888,7 @@ button:disabled {
 }
 
 .burned-back {
-  width: 2.2rem;
+  width: 1.8rem;
   border-radius: 4px;
   border: 1px solid var(--line);
 }
@@ -810,40 +914,10 @@ button:disabled {
 }
 
 .face-up-thumb {
-  width: 2rem;
+  width: 1.6rem;
   border-radius: 4px;
   border: 1px solid var(--line);
   display: block;
-}
-
-.choice-thumb {
-  width: 1.5rem;
-  height: 2.2rem;
-  object-fit: cover;
-  border-radius: 3px;
-  vertical-align: middle;
-  margin-right: 0.35rem;
-}
-
-.choice-prompt {
-  font-weight: 600;
-  margin: 0;
-}
-
-.choice-row {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.choice-row button.selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.choice-row.cards button {
-  min-width: 5.5rem;
 }
 
 /* --- Ticket 33: centered overlays (round/match end) + modals (log,

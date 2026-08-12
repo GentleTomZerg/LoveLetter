@@ -47,7 +47,7 @@ export const en = {
   'game.deck': 'Deck: {count}',
   'game.leaveGame': 'Leave game',
   'game.turnBanner': "It's your turn — play a card.",
-  'game.playCard': 'Play {card}',
+  'game.playChip': 'Play',
   'game.emptyHand': 'Your hand is empty.',
   // Ticket 33: the 2-player face-up removals moved from a text line to real
   // card thumbs on the center table — this is now a caption, not a list.
@@ -104,6 +104,7 @@ export const en = {
   'choice.prince': 'Your Prince: who discards and draws?',
   'choice.king': 'Your King: who do you trade hands with?',
   'choice.guard': 'Your Guard: who do you accuse, and of holding what?',
+  'choice.guardRank': 'Your Guard: which card do they hold?',
   'choice.choosing': '{name} is choosing…',
   'choice.someone': 'Someone',
 
@@ -269,7 +270,7 @@ export const zh: Record<MessageKey, string> = {
   'game.deck': '牌库：{count}',
   'game.leaveGame': '离开游戏',
   'game.turnBanner': '轮到你了——打出一张牌。',
-  'game.playCard': '打出 {card}',
+  'game.playChip': '打出',
   'game.emptyHand': '你的手牌为空。',
   'game.faceUp': '移除的明牌',
   'game.burned': '移除的暗牌——所有人都不知道',
@@ -320,6 +321,7 @@ export const zh: Record<MessageKey, string> = {
   'choice.prince': '你的王子：谁弃牌并抽新牌？',
   'choice.king': '你的国王：你要与谁交换手牌？',
   'choice.guard': '你的守卫：你指控谁，指控其持有哪张牌？',
+  'choice.guardRank': '你的守卫：猜他们拿着哪张牌？',
   'choice.choosing': '{name} 正在选择…',
   'choice.someone': '某人',
 

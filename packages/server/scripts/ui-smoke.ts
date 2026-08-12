@@ -123,25 +123,26 @@ async function assertNoErrors(...tabs: CdpSession[]): Promise<void> {
 }
 
 /** One legal move on this tab, if it is that tab's turn. The Guard's card
- *  options are tried before its target row: the target row stays visible
- *  after a pick, so the card row must win whenever it exists.
+ *  chips are tried before the target seats (tap-the-seat, ticket 35): once a
+ *  seat is tapped the chips appear, so a chip tap must win whenever it
+ *  exists, or the choice would never resolve.
  *
  *  Ticket 25: the hand is select-confirm — clicking a card only selects it,
- *  so the confirm bar click must follow in the same step (the play leaves
- *  only after the confirm; a selected-but-unconfirmed card would be
- *  deselected by the next hand click).
+ *  so the chip click must follow in the same step (the play leaves only
+ *  after the confirm; a selected-but-unconfirmed card would be deselected by
+ *  the next hand click).
  *
  *  Ticket 33: `skipRoundOver` stops the auto-"Start next round" click so a
  *  scenario can observe the round-end overlay before it is consumed. */
 async function playOneMove(tab: CdpSession, skipRoundOver = false): Promise<boolean> {
   if (!skipRoundOver && (await click(tab, '.round-over button'))) return true; // start next round
   if (await click(tab, 'button.card.playable')) {
-    if (await click(tab, '.play-confirm')) return true; // select + confirm
-    await click(tab, 'button.card.playable.selected'); // no bar — deselect and retry
+    if (await click(tab, '.play-chip')) return true; // select + chip confirm (ticket 35)
+    await click(tab, 'button.card.playable.selected'); // no chip — deselect and retry
     return false;
   }
-  if (await click(tab, '.choice-row.cards button')) return true; // Guard: name a card
-  if (await click(tab, '.choice-row button')) return true; // target pickers
+  if (await click(tab, '.choice-chips button')) return true; // Guard: name a card (ticket 35)
+  if (await click(tab, '.seat.chooseable')) return true; // tap-the-seat target (ticket 35)
   return false;
 }
 
@@ -194,20 +195,29 @@ async function openRoom(base: string, tabs: CdpSession[], capacity: number, name
 
 const nonEmptyPiles = (tab: CdpSession) =>
   tab.eval(
-    `[...document.querySelectorAll('.tabletop .seat .pile')].filter((p) => p.querySelectorAll('img').length > 0).length`,
+    `[...document.querySelectorAll('.seat .pile')].filter((p) => p.querySelectorAll('img').length > 0).length`,
   );
 
 const logText = (tab: CdpSession) =>
   tab.eval(`[...document.querySelectorAll('.log li')].map((li) => li.textContent).join('\\n')`);
 
-/** The public table state a resumed tab must reproduce exactly. */
+/** The public table state a resumed tab must reproduce exactly — a per-seat
+ *  map keyed by player id. Every viewer renders each player's public state
+ *  somewhere (opponents in the ring, the viewer themselves in the dock —
+ *  ticket 35), so comparing on content rather than DOM order is the real
+ *  invariant after a reload. */
 const publicSnapshot = (tab: CdpSession) =>
-  tab.eval(`({
-    discards: [...document.querySelectorAll('.tabletop .seat .pile img')].map((i) => i.getAttribute('src')),
-    hands: [...document.querySelectorAll('.tabletop .seat .hand-count')].map((t) => t.textContent),
-    tokens: [...document.querySelectorAll('.tabletop .tokens')].map((t) => t.textContent),
-    header: [...document.querySelectorAll('.top-meta span')].map((s) => s.textContent),
-  })`);
+  tab.eval(`(() => {
+    const seats = {};
+    for (const s of document.querySelectorAll('.seat')) {
+      seats[s.getAttribute('data-player-id')] = {
+        discards: [...s.querySelectorAll('.pile img')].map((i) => i.getAttribute('src')),
+        count: s.querySelector('.hand-count')?.textContent ?? null,
+        tokens: s.querySelector('.tokens')?.textContent ?? null,
+      };
+    }
+    return { seats, header: [...document.querySelectorAll('.top-meta span')].map((s) => s.textContent) };
+  })()`);
 
 // ---------------------------------------------------------------------------
 // Scenario 0 — narrow-phone layout (issue 10): no button may clip at the edge
@@ -274,21 +284,14 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
   const [tabA, tabB] = await openTabs(debugPort, 2);
   await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
 
-  assert.equal(await tabA.eval(`document.querySelectorAll('.tabletop .seat').length`), 2, 'two ring seats');
-  assert.equal(
-    await tabA.eval(`document.querySelectorAll('.tabletop .seat')[0].textContent.includes('turn')`),
-    true,
-    'turn badge on the first seat',
-  );
+  assert.equal(await tabA.eval(`document.querySelectorAll('.tabletop .seat').length`), 1, 'one opponent seat in the ring (ticket 35)');
+  assert.equal(await tabA.eval(`document.querySelector('.dock-seat') !== null`), true, 'the viewer seat docks at the bottom (ticket 35)');
+  assert.equal(await tabA.eval(`document.querySelectorAll('.tabletop .seat.me').length`), 0, 'no self tile in the ring (ticket 35)');
+  assert.equal(await tabA.eval(`document.querySelectorAll('.seat.turn').length`), 1, 'exactly one seat is the current turn');
 
   // Issue 14: the active player's tile is highlighted with a pill — exactly
   // one seat is marked at round start — and the tile internals never reuse
   // the bare `.hand` class (it would inherit the hand-dock min-height).
-  assert.equal(
-    await tabA.eval(`document.querySelectorAll('.tabletop .seat.turn').length`),
-    1,
-    'exactly one seat is the current turn',
-  );
   assert.equal(
     await tabA.eval(`document.querySelectorAll('.tabletop .seat .hand').length`),
     0,
@@ -310,7 +313,7 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
     600,
   );
   const pileImgs = (await tabA.eval(
-    `[...document.querySelectorAll('.tabletop .seat .pile img')].map((i) => i.getAttribute('src'))`,
+    `[...document.querySelectorAll('.seat .pile img')].map((i) => i.getAttribute('src'))`,
   )) as string[];
   assert.ok(pileImgs.length >= 2, 'discard piles show card images');
   assert.ok(pileImgs.every((src) => /^\/cards\/[1-8]\.png$/.test(src)), `discard images are rank-keyed: ${pileImgs}`);
@@ -318,7 +321,7 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
   // Issue 13: every seat shows a public hand count; once anyone has played,
   // at least one seat holds cards represented by face-down backs.
   const handCounts = (await tabA.eval(
-    `[...document.querySelectorAll('.tabletop .seat .hand-count')].map((t) => t.textContent)`,
+    `[...document.querySelectorAll('.seat .hand-count')].map((t) => t.textContent)`,
   )) as string[];
   assert.equal(handCounts.length, 2, 'both seats show a hand count');
   assert.ok(
@@ -327,7 +330,7 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
   );
   const totalHeld = handCounts.reduce((sum, c) => sum + Number(c), 0);
   assert.equal(
-    await tabA.eval(`document.querySelectorAll('.tabletop .seat .hand-back').length`),
+    await tabA.eval(`document.querySelectorAll('.seat .hand-back').length`),
     totalHeld,
     'face-down backs equal the total cards held',
   );
@@ -501,7 +504,7 @@ async function runFixedStage(base: string, debugPort: number): Promise<void> {
 
   const inside = (await tabA.eval(`(() => {
     const vw = window.innerWidth, vh = window.innerHeight;
-    return [...document.querySelectorAll('.stage-top, .stage-bottom, .tabletop .seat, .center-table')]
+    return [...document.querySelectorAll('.stage-top, .stage-bottom, .dock-seat, .tabletop .seat, .center-table')]
       .every((el) => {
         const r = el.getBoundingClientRect();
         return r.top >= -0.5 && r.bottom <= vh + 0.5 && r.left >= -0.5 && r.right <= vw + 0.5;
@@ -513,8 +516,13 @@ async function runFixedStage(base: string, debugPort: number): Promise<void> {
   //    rank-keyed or a card back (never a display name).
   assert.equal(
     await tabA.eval(`document.querySelectorAll('.tabletop .seat').length`),
-    2,
-    'two seats in the ring (2p duel)',
+    1,
+    'one opponent seat in the ring (2p, ticket 35)',
+  );
+  assert.equal(
+    await tabA.eval(`document.querySelector('.dock-seat') !== null`),
+    true,
+    'the viewer seat docks at the bottom (ticket 35)',
   );
   assert.equal(
     await tabA.eval(`document.querySelector('.tabletop.duel') !== null`),
@@ -647,6 +655,81 @@ async function runFixedStage(base: string, debugPort: number): Promise<void> {
   assert.ok(locked.noticeText.length > 0, 'the rotate notice has text');
   await assertNoErrors(tabA, tabB);
   console.log('  fixed stage: zero-scroll, rank-keyed ring, log modal + round-end overlay, scene in view, portrait lock');
+}
+
+// ---------------------------------------------------------------------------
+// Scenario — ticket 35: the viewer's seat lives only in the dock. The ring
+// holds only opponents; the dock is the viewer's full seat (name / tokens /
+// pile / hand count) with the hand; the rank badge and the full-width play
+// bar are gone; and a pending choice lights the target seats (tap-the-seat)
+// — a tap resolves it, or opens the Guard's card-chip row.
+// ---------------------------------------------------------------------------
+
+async function runOwnSeatDock(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+
+  // 1. Structure: the ring holds the one opponent; the dock is the viewer's
+  //    seat carrying every field a ring seat carries.
+  assert.equal(await tabA.eval(`document.querySelectorAll('.tabletop .seat').length`), 1, 'ring has no self tile');
+  assert.equal(await tabA.eval(`document.querySelectorAll('.seat').length`), 2, 'two seats total (ring + dock)');
+  assert.equal(await tabA.eval(`document.querySelector('.dock-seat.seat.me') !== null`), true, 'the dock is the viewer seat');
+  const dockFields = (await tabA.eval(`(() => {
+    const d = document.querySelector('.dock-seat');
+    if (d === null) return null;
+    return {
+      name: d.querySelector('.seat-row .name')?.textContent ?? null,
+      tokens: d.querySelector('.seat-row .tokens')?.textContent ?? null,
+      pile: d.querySelector('.seat-row .pile') !== null || d.querySelector('.seat-row .pile-empty') !== null,
+      count: d.querySelector('.seat-row .hand-count')?.textContent ?? null,
+    };
+  })()`)) as { name: string | null; tokens: string | null; pile: boolean; count: string | null } | null;
+  assert.ok(dockFields !== null, 'the dock seat row exists');
+  assert.equal(dockFields!.name, 'You', 'the dock names the viewer');
+  assert.ok(dockFields!.tokens !== null && dockFields!.tokens.includes('♥'), 'the dock shows the viewer tokens');
+  assert.equal(dockFields!.pile, true, 'the dock carries the viewer pile');
+  assert.ok(dockFields!.count !== null && /^[0-2]$/.test(dockFields!.count!), 'the dock shows the viewer hand count');
+  assert.equal(await tabA.eval(`document.querySelector('.card.art .rank-badge') === null`), true, 'the rank badge is gone');
+  assert.equal(await tabA.eval(`document.querySelector('.play-bar') === null`), true, 'the full-width play bar is gone');
+
+  // 2. Tap-the-seat: drive until a choice is pending on tabA — the legal
+  //    target seat lights up; tapping it resolves the choice (a Guard opens
+  //    the card-chip row instead, and a chip tap resolves it).
+  let sawLit = false;
+  for (let step = 0; step < 1500; step++) {
+    const mine = (await tabA.eval(
+      `document.querySelector('.choice-slot .choice-hint:not(.muted)') !== null
+       || document.querySelector('.choice-slot .choice-chips') !== null`,
+    )) as boolean;
+    if (mine) {
+      if (await click(tabA, '.seat.chooseable')) {
+        sawLit = true;
+        await click(tabA, '.choice-chips button'); // Guard step 2, if it appeared
+      }
+      await waitFor(
+        tabA,
+        `document.querySelector('.choice-slot .choice-hint:not(.muted)') === null
+         && document.querySelector('.choice-slot .choice-chips') === null`,
+        10000,
+        'the choice resolved on tabA',
+      );
+      break;
+    }
+    await click(tabA, '.match-over button');
+    let acted = false;
+    for (const t of [tabA, tabB]) {
+      if (await playOneMove(t)) {
+        acted = true;
+        break;
+      }
+    }
+    if (!acted) await sleep(80);
+  }
+  assert.ok(sawLit, 'a pending choice lit the target seat');
+  await assertNoErrors(tabA, tabB);
+  console.log('  own-seat dock: ring has no self tile, dock is the seat, rank badge gone, tap-the-seat resolves');
 }
 
 // ---------------------------------------------------------------------------
@@ -901,15 +984,22 @@ async function runSceneBlocking(base: string, debugPort: number): Promise<void> 
   await playUntil(
     [tabA, tabB],
     () => tabA.eval(
-      `[...document.querySelectorAll('.tabletop .tokens')].some((t) => t.textContent.includes('6 / 7'))`,
+      `[...document.querySelectorAll('.seat .tokens')].some((t) => t.textContent.includes('6 / 7'))`,
     ),
     5000,
   );
   await tabA.setReducedMotion(false);
   await tabB.setReducedMotion(false);
-  // The media emulation propagates async — settle so the final round's first
-  // move already enqueues scenes (the win banner must exist to be caught).
-  await sleep(400);
+  // The media emulation propagates async — wait until the page actually
+  // reports no-preference before the final round's first move, so the win
+  // banner is guaranteed to enqueue (a stale "reduce" skips every scene and
+  // the banner is never caught).
+  await waitFor(
+    tabA,
+    `window.matchMedia('(prefers-reduced-motion: reduce)').matches === false`,
+    5000,
+    'motion emulation propagates',
+  );
   await playUntil(
     [tabA, tabB],
     () => tabA.eval(`document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null`),
@@ -1015,8 +1105,8 @@ async function runSelectConfirm(base: string, debugPort: number): Promise<void> 
     tabA.eval(
       `[...document.querySelectorAll('.hand button.card')].findIndex((b) => b.classList.contains('selected'))`,
     ) as Promise<number>;
-  const confirmLabel = () =>
-    tabA.eval(`document.querySelector('.play-confirm')?.textContent?.trim() ?? null`) as Promise<string | null>;
+  const chipText = () =>
+    tabA.eval(`document.querySelector('.play-chip')?.textContent?.trim() ?? null`) as Promise<string | null>;
   const playLines = () => tabA.eval(`document.querySelectorAll('.log li.log-play').length`) as Promise<number>;
   const nameAt = (i: number) =>
     tabA.eval(
@@ -1026,17 +1116,23 @@ async function runSelectConfirm(base: string, debugPort: number): Promise<void> 
   const card1 = await nameAt(1);
   assert.ok(card0 !== null && card1 !== null, 'both hand cards have names');
 
-  // 1. Select: no confirm bar before any selection; clicking a card raises
-  //    the bar naming it — and nothing is sent (no new play line).
+  // 1. Select: no play chip before any selection; clicking a card raises the
+  //    chip on it (ticket 35 — the card's own name caption still names it) —
+  //    and nothing is sent (no new play line).
   assert.equal(
-    await tabA.eval(`document.querySelector('.play-confirm') === null`),
+    await tabA.eval(`document.querySelector('.play-chip') === null`),
     true,
-    'no confirm bar before a selection',
+    'no play chip before a selection',
   );
   await click(tabA, '.hand button.card');
-  await waitFor(tabA, `document.querySelector('.play-confirm') !== null`, 5000, 'confirm bar appears on selection');
+  await waitFor(tabA, `document.querySelector('.play-chip') !== null`, 5000, 'play chip appears on selection');
   assert.equal(await selectedIndex(), 0, 'the first card is selected');
-  assert.equal(await confirmLabel(), `Play ${card0}`, 'confirm bar names the selected card');
+  assert.equal(await chipText(), 'Play', 'the chip offers to play');
+  assert.equal(
+    await tabA.eval(`document.querySelector('.hand button.card.selected .name-caption')?.textContent`),
+    card0,
+    'the selected card still names itself',
+  );
   const playsBefore = await playLines();
   await sleep(200); // a beat — still nothing may have been sent
   assert.equal(await playLines(), playsBefore, 'selecting never sends a play');
@@ -1051,21 +1147,26 @@ async function runSelectConfirm(base: string, debugPort: number): Promise<void> 
     5000,
     'selection switches to the other card',
   );
-  assert.equal(await confirmLabel(), `Play ${card1}`, 'confirm bar re-labels the switched card');
+  assert.equal(await chipText(), 'Play', 'the chip follows the switched card');
+  assert.equal(
+    await tabA.eval(`document.querySelector('.hand button.card.selected .name-caption')?.textContent`),
+    card1,
+    'the switched card names itself',
+  );
   assert.equal(await playLines(), playsBefore, 'switching never sends a play');
 
   // 3. Confirm: exactly one play line lands, the bar clears, the played card
   //    leaves the hand (a deck-empty round can reveal the last card in the
   //    same burst — only the strict drop is asserted).
   const handBefore = (await tabA.eval(`document.querySelectorAll('.hand button.card').length`)) as number;
-  await click(tabA, '.play-confirm');
+  await click(tabA, '.play-chip');
   await waitFor(
     tabA,
     `document.querySelectorAll('.log li.log-play').length === ${playsBefore + 1}`,
     10000,
     'exactly one play line after confirm',
   );
-  assert.equal(await confirmLabel(), null, 'confirm bar clears after the play');
+  assert.equal(await chipText(), null, 'play chip clears after the play');
   const handAfter = (await tabA.eval(`document.querySelectorAll('.hand button.card').length`)) as number;
   assert.ok(handAfter < handBefore, 'the played card left the hand');
   await assertNoErrors(tabA, tabB);
@@ -1151,7 +1252,7 @@ async function runFullMatch(base: string, debugPort: number): Promise<void> {
     await playUntil([tabA, tabB], () => tabA.eval(`document.querySelector('.match-over') !== null`));
     assert.equal(await tabB.eval(`document.querySelector('.match-over') !== null`), true, 'match over on B too');
     const winnerTokens = (await tabA.eval(
-      `[...document.querySelectorAll('.tabletop .tokens')].some((t) => t.textContent.includes('7 / 7'))`,
+      `[...document.querySelectorAll('.seat .tokens')].some((t) => t.textContent.includes('7 / 7'))`,
     )) as boolean;
     assert.equal(winnerTokens, true, 'the winner reached 7 / 7 tokens');
 
@@ -1185,7 +1286,7 @@ async function runFullMatch(base: string, debugPort: number): Promise<void> {
     'round 1 after rematch',
   );
   const reset = (await tabA.eval(
-    `[...document.querySelectorAll('.tabletop .tokens')].every((t) => t.textContent.includes('0 / 7'))`,
+    `[...document.querySelectorAll('.seat .tokens')].every((t) => t.textContent.includes('0 / 7'))`,
   )) as boolean;
   assert.equal(reset, true, 'tokens reset after rematch');
   await assertNoErrors(tabA, tabB);
@@ -1210,12 +1311,17 @@ async function runMultiPlayer(base: string, debugPort: number): Promise<void> {
     for (const t of tabs) await t.setReducedMotion(true);
     assert.equal(
       await tabs[0]!.eval(`document.querySelectorAll('.tabletop .seat').length`),
+      capacity - 1,
+      `${capacity - 1} opponent seats in the ring (ticket 35)`,
+    );
+    assert.equal(
+      await tabs[0]!.eval(`document.querySelectorAll('.seat').length`),
       capacity,
-      `${capacity} seats filled`,
+      `${capacity} seats total (ring + dock)`,
     );
     await playUntil(tabs, () => tabs[0]!.eval(`document.querySelector('.match-over') !== null`));
     const reached = (await tabs[0]!.eval(
-      `[...document.querySelectorAll('.tabletop .tokens')].some((t) => t.textContent.includes('${target} / ${target}'))`,
+      `[...document.querySelectorAll('.seat .tokens')].some((t) => t.textContent.includes('${target} / ${target}'))`,
     )) as boolean;
     assert.equal(reached, true, `${capacity}-player match ended at the ${target}-token target`);
     await assertNoErrors(...tabs);
@@ -1250,7 +1356,7 @@ async function runReloadResume(base: string, debugPort: number): Promise<void> {
 
   // Some real mid-round state: at least one discard on the table.
   await playUntil([tabA, tabB], async () => (await nonEmptyPiles(tabA)) >= 1, 600);
-  const before = (await publicSnapshot(tabB)) as { discards: string[]; tokens: string[]; header: string[] };
+  const before = (await publicSnapshot(tabB)) as { seats: Record<string, { discards: string[]; count: string | null; tokens: string | null }>; header: string[] };
 
   await tabA.reload();
   await waitFor(tabA, `document.querySelector('.screen.game') !== null`, 15000, 'game screen after reload');
@@ -1264,7 +1370,7 @@ async function runReloadResume(base: string, debugPort: number): Promise<void> {
   );
   await tabA.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
   await waitFor(tabA, `document.querySelector('.chat-dialog') === null`, 5000, 'chat dialog closes after reload');
-  const after = (await publicSnapshot(tabA)) as { discards: string[]; tokens: string[]; header: string[] };
+  const after = (await publicSnapshot(tabA)) as { seats: Record<string, { discards: string[]; count: string | null; tokens: string | null }>; header: string[] };
   assert.deepEqual(after, before, 'resumed tab reproduces the public table state exactly');
 
   // The seat is live again: one more move must advance the public log.
@@ -1311,6 +1417,8 @@ async function main(): Promise<void> {
     await runLogStrip(base, debugPort);
     console.log('[ui-smoke] fixed stage: zero-scroll tabletop + overlays + portrait lock (ticket 33)…');
     await runFixedStage(base, debugPort);
+    console.log('[ui-smoke] own-seat dock: no self tile, dock is the seat, tap-the-seat (ticket 35)…');
+    await runOwnSeatDock(base, debugPort);
     console.log('[ui-smoke] scene-based card animations (ticket 23)…');
     await runSceneAnimations(base, debugPort);
     console.log('[ui-smoke] the draw pops the new card (ticket 28)…');
@@ -1333,7 +1441,7 @@ async function main(): Promise<void> {
       + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), select-confirm regret '
       + '(ticket 25), hand/count sync around King trades (ticket 30), draw pop (ticket 28), chat close '
       + 'button (ticket 29), reload/resume with chat restored, fixed stage + overlays + portrait lock '
-      + '(ticket 33), no error banners anywhere',
+      + '(ticket 33), own-seat dock (ticket 35), no error banners anywhere',
     );  } finally {
     if (chrome) {
       chrome.kill();
