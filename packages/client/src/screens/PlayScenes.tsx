@@ -21,29 +21,28 @@
  * Seats never fly — elimination dims the seat through the existing
  * out-state transition (CSS).
  *
- * Ticket 24 lifts the queue into `usePlayScenes` so the Game screen can
- * block the hand/choice while a scene plays and let the log strip follow
- * the currently-animating beat; this component is the pure stage sequencer
- * for that shared queue.
+ * Ticket 24 lifts the queue into `useStory` (formerly `usePlayScenes`) so the
+ * Game screen can block the hand/choice while a scene plays and let the log
+ * strip follow the currently-animating beat; this component is the pure
+ * stage sequencer for that shared queue. Ticket 38 extends the hook with the
+ * draw ledger + lagged display view (story.ts).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { LogEntry, Rank } from '@love-letter/core';
+import type { LogEntry, Rank, ViewState } from '@love-letter/core';
 import { useLocale } from '../i18n';
 import { formatLogEntry, type LogContext } from '../i18n/logFormat';
 import {
-  initialSceneState,
-  scenesFor,
   sceneStages,
   STAGE_MS,
   endEntryOf,
   type Scene,
   type SceneOrBanner,
-  type SceneState,
   type StageEl,
   type Banner,
 } from '../scenes';
+import { initialStoryState, lagViewOf, storyFor, storyPosition, maxLogId, heldAndReleased, type DrawRecord, type StoryState } from '../story';
 
 const CARD_W = 4; // rem — .scene-flash width
 const CARD_H = CARD_W * 1.5;
@@ -319,7 +318,8 @@ function BannerView({ banner, onDone }: { banner: Banner; onDone: () => void }) 
 }
 
 /**
- * The scene queue shared with the Game screen (ticket 24): the head is the
+ * The story — the scene queue shared with the Game screen, plus the draw
+ * ledger and the lagged display view (ticket 38). The head is the
  * currently-animating beat. `busy` blocks the hand and choice buttons while
  * a scene plays; `currentEntry` is the log entry the head scene narrates,
  * which the top strip follows so it never races ahead of the animation.
@@ -330,8 +330,15 @@ function BannerView({ banner, onDone }: { banner: Banner; onDone: () => void }) 
  * screen gates the round/match-end overlays on it, so the win panel can
  * never flash in the frame before the banner enqueues (the phase flips on
  * the round entry's render; effects run a frame later).
+ *
+ * Ticket 38: the story owns the draw moment — `lagView` is the true view
+ * with not-yet-told draws withheld (the drawer's own card, the deck count,
+ * and the seat hand counts keep their pre-draw values); Game renders
+ * story-related display only from it. `held` is the current hold set;
+ * `released` is what the story has passed (applied to `lagView`) — the
+ * ticket-28 pop keys on the self draw's release.
  */
-export interface PlayScenesApi {
+export interface StoryApi {
   queue: SceneOrBanner[];
   busy: boolean;
   currentEntry: LogEntry | undefined;
@@ -340,12 +347,19 @@ export interface PlayScenesApi {
   /** Drain the head scene — key-filter is idempotent, so a late drain can
    *  never skip the next scene. */
   advance: (key: string) => void;
+  /** The lagged display view — story-related display renders only from it
+   *  (ticket 38). */
+  lagView: ViewState;
+  /** Draws the story is holding — beyond the story position. */
+  held: DrawRecord[];
+  /** Draws the story has released — the display has applied them. */
+  released: DrawRecord[];
 }
 
 /**
- * Drive the scene queue from the live log (ticket 23 + 26). The mount
- * baseline skips the replayed history; prefers-reduced-motion enqueues
- * nothing, so `busy` stays false and the strip keeps showing the latest
+ * Drive the story from the live log (tickets 23 + 26 + 37 + 38). The mount
+ * baseline skips the replayed history; prefers-reduced-motion enqueues no
+ * scenes, so `busy` stays false and the strip keeps showing the latest
  * entry — exactly as before.
  *
  * Ticket 37: `reachedEndId` tracks the round/match entry the story has
@@ -355,22 +369,24 @@ export interface PlayScenesApi {
  * on the anti-flash frame (the phase flips on the round entry's render,
  * but the banner enqueues a frame later — effects run post-render, so
  * raw `busy` would flash the panel once).
+ *
+ * Ticket 38: the draw ledger always folds — the release (and the pop) must
+ * run even under reduced motion, where the queue never fills so every draw
+ * releases instantly; only the scenes are gated on the media query. The
+ * ledger lives in state so a batch that enqueues no scene still re-renders
+ * with the new hold set (a draw that folds mid-scene must hide immediately).
  */
-export function usePlayScenes(
-  log: LogEntry[],
-  selfId: string,
-  roster: Record<string, string>,
-  hand: Rank[],
-): PlayScenesApi {
+export function useStory(view: ViewState, selfId: string): StoryApi {
   const { t, cardName } = useLocale();
   const [queue, setQueue] = useState<SceneOrBanner[]>([]);
+  const [story, setStory] = useState<StoryState>(initialStoryState);
   const [reachedEndId, setReachedEndId] = useState<number | undefined>(undefined);
-  const stateRef = useRef<SceneState>(initialSceneState());
   const seenIdRef = useRef<number | null>(null);
+  const log = view.log;
 
   useEffect(() => {
-    const ctx: LogContext = { selfId, roster, t, cardName };
-    const maxId = log.reduce((m, e) => Math.max(m, e.id), 0);
+    const ctx: LogContext = { selfId, roster: view.roster, t, cardName };
+    const maxId = maxLogId(log);
     // Ticket 37: the round/match entry of the current phase — the story
     // reaching it (narrating it, or explicitly skipping it) is what unblocks
     // the round/match-end overlay.
@@ -379,22 +395,33 @@ export function usePlayScenes(
       seenIdRef.current = maxId; // mount baseline — the replayed history never animates
       // Ticket 37: the baseline skips the whole log — the story has reached
       // the round/match entry trivially (nothing will ever narrate it), so
-      // a reconnecting player sees the end panel immediately.
+      // a reconnecting player sees the end panel immediately. Ticket 38: the
+      // ledger stays empty — a reconnecting player never sees held draws.
       if (endEntry !== undefined) setReachedEndId(endEntry.id);
       return;
     }
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      seenIdRef.current = maxId;
-      // Ticket 37: motion off enqueues nothing — the story reached the entry
-      // by skipping it; the end panel can show immediately.
-      if (endEntry !== undefined) setReachedEndId(endEntry.id);
-      return; // motion off — the top bar text carries the moment
-    }
     const fresh = log.filter((e) => e.id > seenIdRef.current!);
     seenIdRef.current = maxId;
-    const added = scenesFor(fresh, stateRef.current, (entry) => formatLogEntry(entry, ctx), { selfId, hand });
-    stateRef.current = added.state;
-    if (added.scenes.length > 0) setQueue((q) => [...q, ...added.scenes]);
+    // The fold-time story position — the head beat's entry id (or the newest
+    // log id when idle) — feeds the countess cancellation (edge ①), which
+    // must know which draws are still held when the discard arrives. The
+    // display re-derives from the live position on every render as the queue
+    // drains, so this is the cancellation's reference only.
+    const position = storyPosition(log, queue[0]);
+    const added = storyFor(
+      fresh,
+      story,
+      (entry) => formatLogEntry(entry, ctx),
+      { selfId, hand: view.hand.map((c) => c.rank) },
+      position,
+    );
+    setStory(added.state);
+    // Ticket 38: only the scenes are gated on the media query — the draw
+    // ledger always folds (under reduced motion the queue never fills, so
+    // every draw releases instantly and the release machinery must still run).
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && added.scenes.length > 0) {
+      setQueue((q) => [...q, ...added.scenes]);
+    }
     // Ticket 37: the banner enqueued for the round/match entry marks the
     // story having reached it — the round/match-end overlay waits on this.
     const banner = [...added.scenes].reverse().find((s) => s.kind === 'banner');
@@ -406,13 +433,16 @@ export function usePlayScenes(
   }, []);
 
   const head = queue[0] ?? null;
+  const position = storyPosition(log, head ?? undefined);
+  const { held, released } = heldAndReleased(story.draws, position);
+  const lagView = lagViewOf(view, held);
   const currentEntry =
     head !== null && head.entryId !== undefined ? log.find((e) => e.id === head.entryId) : undefined;
 
-  return { queue, busy: queue.length > 0, currentEntry, reachedEndId, advance };
+  return { queue, busy: queue.length > 0, currentEntry, reachedEndId, advance, held, released, lagView };
 }
 
-export function PlayScenes({ scenes, selfId, roster }: { scenes: PlayScenesApi; selfId: string; roster: Record<string, string> }) {
+export function PlayScenes({ scenes, selfId, roster }: { scenes: StoryApi; selfId: string; roster: Record<string, string> }) {
   const { t, cardName } = useLocale();
   const { queue, advance } = scenes;
   const head = queue[0] ?? null;

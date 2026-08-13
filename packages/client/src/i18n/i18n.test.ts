@@ -117,6 +117,9 @@ describe('zh interpolation integrity', () => {
     { id: 24, kind: 'info', params: { what: 'roundStarted', roundNumber: 3 } },
     { id: 25, kind: 'info', params: { what: 'rematchStarted' } },
     { id: 26, kind: 'info', params: { what: 'choiceAbandoned', playerId: 'B' } },
+    // Ticket 38: the draw — the drawer's own stream carries the card.
+    { id: 29, kind: 'draw', params: { playerId: 'B' } },
+    { id: 30, kind: 'draw', params: { playerId: 'A', shrunk: true, name: 'Countess' } },
     // Resolution completions (ticket 26)
     { id: 27, kind: 'miss', params: { playerId: 'A', targetId: 'B', rank: 8, played: 1 } },
     { id: 28, kind: 'tie', params: { playerId: 'A', targetId: 'B', rank: 3 } },
@@ -162,5 +165,15 @@ describe('zh interpolation integrity', () => {
     expect(two).toBe('Alice 和 Bob 赢得了这一轮（最后存活）');
     const three = formatLogEntry({ id: 1, kind: 'round', params: { winners: ['A', 'B', 'C'], reason: 'highest-hand' } }, c);
     expect(three).toBe('Alice、Bob 和 Carol 赢得了这一轮（手牌最大）');
+  });
+
+  it('renders the draw lines — the drawer sees the card (ticket 38)', () => {
+    // A viewer who is not the drawer sees the draw with no card.
+    const c = ctx('X');
+    expect(formatLogEntry({ id: 1, kind: 'draw', params: { playerId: 'A' } }, c)).toBe('Alice 抽了一张牌');
+    // The drawer's own stream carries the drawn card's name.
+    expect(
+      formatLogEntry({ id: 2, kind: 'draw', params: { playerId: 'A', shrunk: true, name: 'Countess' } }, ctx('A')),
+    ).toBe('你抽到了伯爵夫人');
   });
 });

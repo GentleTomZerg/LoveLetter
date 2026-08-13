@@ -6,7 +6,10 @@
 
 import { describe, expect, it } from 'vitest';
 import type { LogEntry } from '@love-letter/core';
-import { entryRank, latestLogEntry, mergeLog, type ActivityLine } from './logFormat';
+import type { LogContext } from './logFormat';
+import { entryRank, formatLogEntry, latestLogEntry, mergeLog, type ActivityLine } from './logFormat';
+import { t } from './index';
+import { CARD_TEXT } from './cards';
 
 const play = (id: number, rank: number): LogEntry => ({ id, kind: 'play', params: { playerId: 'A', rank } });
 const info = (id: number, what: string): LogEntry => ({ id, kind: 'info', params: { what } });
@@ -32,6 +35,9 @@ describe('entryRank (ticket 19)', () => {
     expect(entryRank({ id: 4, kind: 'discard', params: { playerId: 'B', reason: 'countess' } })).toBeUndefined();
     expect(entryRank({ id: 5, kind: 'peek', params: { playerId: 'A', targetId: 'B' } })).toBeUndefined();
     expect(entryRank({ id: 6, kind: 'choice', params: { playerId: 'A' } })).toBeUndefined();
+    // Ticket 38: a draw carries the drawn card's *name*, not a rank — the
+    // strip thumbnail stays rank-keyed, so a draw shows no thumbnail.
+    expect(entryRank({ id: 7, kind: 'draw', params: { playerId: 'A', shrunk: true, name: 'Countess' } })).toBeUndefined();
   });
 
   it('treats out-of-range ranks as absent', () => {
@@ -82,3 +88,21 @@ describe('mergeLog (ticket 31)', () => {
     expect(merged.map((m) => plain(m.entry))).toEqual([plain(info(0, 'playerBack')), plain(play(2, 5))]);
   });
 });
+
+describe('formatLogEntry: draw lines (ticket 38)', () => {
+  const ctx: LogContext = {
+    selfId: 'A',
+    roster: { A: 'Alice', B: 'Bob' },
+    t: (key, params) => t('en', key, params),
+    cardName: (rank) => CARD_TEXT.en.name[rank],
+  };
+  const draw = (id: number, params: LogEntry['params']): LogEntry => ({ id, kind: 'draw', params });
+
+  it('renders "drew a card" for other players and names the card on the drawer\'s own stream', () => {
+    expect(formatLogEntry(draw(1, { playerId: 'B' }), ctx)).toBe('Bob drew a card');
+    // The drawer's own stream carries the drawn card's name — the self line.
+    expect(formatLogEntry(draw(2, { playerId: 'A', shrunk: true, name: 'Countess' }), ctx)).toBe('You drew Countess');
+    expect(formatLogEntry(draw(3, { playerId: 'B', shrunk: true }), ctx)).toBe('Bob drew a card');
+  });
+});
+

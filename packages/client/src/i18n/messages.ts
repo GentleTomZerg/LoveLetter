@@ -130,6 +130,11 @@ export const en = {
   'log.tie.self': "Your {played} tied {target}",
   'log.prince': '{name} targeted {target} with the Prince',
   'log.king': '{name} traded hands with {target}',
+  // Ticket 38: the draw is a log entry — "Bob drew a card"; the drawer's
+  // own stream carries the card (privacy, same as peek), so their line names
+  // it. No article, per the log-line convention.
+  'log.draw': '{name} drew a card',
+  'log.draw.self': 'You drew {card}',
   'log.peek.self': "You looked at {target}'s hand",
   'log.peek.selfCard': "You looked at {target}'s hand: {card}",
   'log.peek.other': "{name} looked at {target}'s hand",
@@ -345,6 +350,9 @@ export const zh: Record<MessageKey, string> = {
   'log.tie.self': '你的 {played} 与 {target} 打平',
   'log.prince': '{name} 对 {target} 使用了王子',
   'log.king': '{name} 与 {target} 交换了手牌',
+  // 抽牌条目："B 抽了一张牌"；只有抽牌者自己的消息流能看见牌名。
+  'log.draw': '{name} 抽了一张牌',
+  'log.draw.self': '你抽到了{card}',
   'log.peek.self': '你查看了 {target} 的手牌',
   'log.peek.selfCard': '你查看了 {target} 的手牌：{card}',
   'log.peek.other': '{name} 查看了 {target} 的手牌',

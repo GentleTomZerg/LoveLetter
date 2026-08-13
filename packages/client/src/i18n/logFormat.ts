@@ -8,8 +8,16 @@
  */
 
 import type { LogEntry, Rank } from '@love-letter/core';
+import { CARD_INFO } from '@love-letter/core';
 import type { MessageKey } from './messages';
 import { joinLocalizedList, type TParams } from './index';
+
+/** CardName → rank — the draw entry carries the drawn card's *name* (its
+ *  identity, ticket 38), so the localized line resolves it back to a rank
+ *  for the locale dictionary. Derived from CARD_INFO so the two can never
+ *  drift. */
+const RANKS: Rank[] = [1, 2, 3, 4, 5, 6, 7, 8];
+const RANK_BY_NAME: Record<string, Rank> = Object.fromEntries(RANKS.map((r) => [CARD_INFO[r].name, r]));
 
 export interface LogContext {
   selfId: string;
@@ -123,6 +131,14 @@ export function formatLogEntry(entry: LogEntry, ctx: LogContext): string {
         name: name(params.playerId as string),
         target: name(params.targetId as string),
       });
+    case 'draw':
+      // Ticket 38: "Bob drew a card"; only the drawer's own stream carries
+      // the drawn card's name (privacy, same as peek) — their line names it.
+      if (typeof params.name === 'string') {
+        const rank = RANK_BY_NAME[params.name];
+        return ctx.t('log.draw.self', { card: rank !== undefined ? card(rank) : params.name });
+      }
+      return ctx.t('log.draw', { name: name(params.playerId as string) });
     case 'miss':
       // The completion line names both cards: the played Guard and the guess
       // (ticket 26). The `.self` form avoids the possessive on "You".

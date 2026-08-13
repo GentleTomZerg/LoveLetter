@@ -373,3 +373,45 @@ describe('reduceView: resolution completion events (ticket 26)', () => {
     expect(view!.log.at(-1)).toMatchObject({ kind: 'tie', params: { playerId: 'B', targetId: 'A', rank: 3 } });
   });
 });
+
+describe('reduceView: draws enter the log (ticket 38)', () => {
+  it('logs a draw entry carrying the player, the shrunk flag, and the card name only on the drawer\'s own stream', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+    // A's own draw: the card name travels with it (privacy, same as peek).
+    view = reduceView(view, { type: 'cardDrawn', playerId: SELF, card: card(7) }, SELF);
+    expect(view!.log.at(-1)).toMatchObject({
+      kind: 'draw',
+      params: { playerId: 'A', shrunk: true, name: 'Countess' },
+    });
+    // B's draw as seen by A: the deck shrinks, the card stays hidden.
+    view = reduceView(view, { type: 'cardDrawn', playerId: OTHER, card: null }, SELF);
+    expect(view!.log.at(-1)).toMatchObject({
+      kind: 'draw',
+      params: { playerId: 'B', shrunk: true },
+    });
+    expect((view!.log.at(-1)!.params as Record<string, unknown>).name).toBeUndefined();
+  });
+
+  it('marks a burned-card draw shrunk: false (ruling 4 — the deck count does not shrink)', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 0, faceUpRemoved: [] }, SELF);
+    // Deck empty: A's draw is the face-down burned card.
+    view = reduceView(view, { type: 'cardDrawn', playerId: 'A', card: null }, SELF);
+    expect(view!.log.at(-1)).toMatchObject({ kind: 'draw', params: { playerId: 'A', shrunk: false } });
+    expect(view!.deckCount).toBe(0); // the count stays at zero
+    expect(view!.burnedCount).toBe(0); // the burned card left the burn pile
+  });
+
+  it('logs every draw — deals and turn markers never become draw entries', () => {
+    let view: ViewState | null = buildView(makeGame([p('A', { name: 'Alice' }), p('B', { name: 'Bob' })], { deck: [] }), SELF);
+    view = reduceView(view, { type: 'roundStarted', roundNumber: 1, firstPlayerId: 'A', deckCount: 10, faceUpRemoved: [] }, SELF);
+    view = reduceView(view, { type: 'cardDealt', playerId: 'A', card: card(1) }, SELF);
+    view = reduceView(view, { type: 'turnStarted', playerId: 'A' }, SELF);
+    view = reduceView(view, { type: 'cardDrawn', playerId: 'A', card: card(1) }, SELF);
+    const kinds = view!.log.map((e) => e.kind);
+    expect(kinds.filter((k) => k === 'draw')).toHaveLength(1);
+    expect(kinds).not.toContain('cardDealt');
+    expect(kinds).not.toContain('turnStarted');
+  });
+});

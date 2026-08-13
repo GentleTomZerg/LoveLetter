@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Card, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Rank, ViewState } from '@love-letter/core';
+import type { Card, CardName, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Rank, ViewState } from '@love-letter/core';
 import type { Game } from '../useGame';
 import { useLocale, joinLocalizedList } from '../i18n';
 import { formatLogEntry, entryRank, mergeLog, type ActivityLine, type LogContext } from '../i18n/logFormat';
 import { endEntryOf } from '../scenes';
-import { PlayScenes, usePlayScenes } from './PlayScenes';
+import { PlayScenes, useStory } from './PlayScenes';
 
 /**
  * The game screen (ticket 33): a fixed `100dvh` stage that never scrolls —
@@ -18,13 +18,18 @@ import { PlayScenes, usePlayScenes } from './PlayScenes';
  */
 export function Game({ view, selfId, game }: { view: ViewState; selfId: string; game: Game }) {
   const { t } = useLocale();
-  const scenes = usePlayScenes(view.log, selfId, view.roster, view.hand.map((c) => c.rank));
-  const me = view.players.find((p) => p.id === selfId);
+  // Ticket 38: the story is the single presentation seam — it owns the scene
+  // queue, the story position, and the lagged display view. Story-related
+  // display (the hand, the deck counts, the seat hand counts) renders only
+  // from `story.lagView` below; input gating (`busy`) keeps the ticket-24
+  // shape.
+  const story = useStory(view, selfId);
+  const me = story.lagView.players.find((p) => p.id === selfId);
   const myTurn = view.currentTurn === selfId;
   const isTurn = myTurn && view.phase === 'round';
   // Ticket 24: the round waits — the hand stays disabled until the scene
   // queue drains, so nobody acts over a resolution that is still animating.
-  const canPlay = view.phase === 'round' && myTurn && view.pendingChoice === null && !scenes.busy;
+  const canPlay = view.phase === 'round' && myTurn && view.pendingChoice === null && !story.busy;
   const myChoice = view.pendingChoice !== null && view.pendingChoice.playerId === selfId;
 
   // Ticket 37: the round/match-end overlays wait for the story — the win
@@ -41,7 +46,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
   // the replayed events it already covers), where the story never narrates
   // the phase: nothing to wait for, so `busy` is the only gate.
   const endEntryId = endEntryOf(view.log)?.id;
-  const endStoryDone = !scenes.busy && (endEntryId === undefined || scenes.reachedEndId === endEntryId);
+  const endStoryDone = !story.busy && (endEntryId === undefined || story.reachedEndId === endEntryId);
 
   // Ticket 35: the Guard's tap-the-seat first step — the chosen target stays
   // local until a card chip is tapped (tap another lit seat to switch).
@@ -53,7 +58,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
    *  scene animates (ticket 24: the round waits for the queue to drain). */
   const pickTarget = (id: string) => {
     const pc = view.pendingChoice;
-    if (pc === null || pc.playerId !== selfId || !pc.targets.includes(id) || scenes.busy) return;
+    if (pc === null || pc.playerId !== selfId || !pc.targets.includes(id) || story.busy) return;
     if (pc.kind === 'guard') setGuardTarget(id);
     else game.sendChoice({ kind: pc.kind, targetPlayerId: id });
   };
@@ -65,23 +70,33 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
   // it: the turn passes, a pending choice opens, the phase moves, or the
   // hand itself reshapes (a stale index would highlight the wrong card).
   const [selected, setSelected] = useState<number | null>(null);
-  const handKey = view.hand.map((c) => `${c.rank}:${c.name}`).join(',');
+  // The displayed hand — the lagged view's (ticket 38): the drawer's own
+  // card appears only at the draw's release, and the selection follows what
+  // the viewer can actually see.
+  const handKey = story.lagView.hand.map((c) => `${c.rank}:${c.name}`).join(',');
   useEffect(() => setSelected(null), [handKey, view.currentTurn, view.pendingChoice, view.phase]);
 
-  // Ticket 28 + 36: the drawer's own draw pops the new card in the hand — a
-  // pure CSS moment, no scene, no round pause. Ticket 36: the pop waits for
-  // the previous play's scene to fully drain, so it never overlaps the
-  // still-animating turn (the effect re-fires when `scenes.busy` clears).
-  const [popRank, setPopRank] = useState<Rank | null>(null);
-  const drawSeq = game.lastDraw?.seq ?? 0;
+  // Ticket 28 + 38: the drawer's own draw pops the new card in the hand — a
+  // pure CSS moment, no scene, no round pause. The pop fires on the draw's
+  // **release** (the story reached it — the queue drained), never a stale
+  // echo, and keys on the drawn card's identity (name), so it marks the
+  // drawn card; the old rank-keyed pop lit every matching duplicate.
+  const [popName, setPopName] = useState<CardName | null>(null);
+  const selfReleased = story.released.filter((d) => d.name !== undefined);
+  const releaseKey = selfReleased.at(-1)?.entryId ?? -1;
   useEffect(() => {
-    if (game.lastDraw === null || scenes.busy) return;
-    setPopRank(game.lastDraw.rank);
-    const timer = setTimeout(() => setPopRank(null), 600);
+    const hit = selfReleased.find((d) => d.entryId === releaseKey);
+    if (hit === undefined || hit.name === undefined) return;
+    setPopName(hit.name);
+    const timer = setTimeout(() => setPopName(null), 600);
     return () => clearTimeout(timer);
-  }, [drawSeq, scenes.busy]);
+    // The effect re-fires only when a new self draw releases.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [releaseKey]);
+  // The deck pulse fires on the lagged deck count — at the release, not at
+  // the fold (ticket 38): the public "someone drew" moment is the release.
   const [deckPulse, setDeckPulse] = useState(0);
-  useEffect(() => setDeckPulse((n) => n + 1), [view.deckCount]);
+  useEffect(() => setDeckPulse((n) => n + 1), [story.lagView.deckCount]);
 
   // Ticket 33: the overlays — the log history and the manual are modals
   // (Esc closes either; the chat dialog owns its own Esc, ticket 29).
@@ -116,14 +131,14 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
             logArrivals={game.logArrivals}
             selfId={selfId}
             roster={view.roster}
-            beat={scenes.currentEntry}
+            beat={story.currentEntry}
             onOpen={() => setLogOpen(true)}
           />
           <div className="top-meta">
             <span className="meta-room">{t('game.room', { code: view.roomCode })}</span>
             <span className="meta-round">{t('game.round', { number: view.roundNumber })}</span>
             <span key={`deck${deckPulse}`} className="deck-count meta-deck">
-              {t('game.deck', { count: view.deckCount })}
+              {t('game.deck', { count: story.lagView.deckCount })}
             </span>
           </div>
           <button className="manual-button" onClick={() => setManualOpen(true)}>
@@ -140,14 +155,14 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
             the viewport. */}
         <div className="stage-band">
           <TableRing
-            view={view}
+            view={story.lagView}
             selfId={selfId}
             away={game.away}
             deckPulse={deckPulse}
             choiceTargets={choiceTargets}
             guardTarget={guardTarget}
             onPickTarget={pickTarget}
-            choiceLocked={scenes.busy}
+            choiceLocked={story.busy}
           />
         </div>
 
@@ -163,7 +178,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
                 players={view.players}
                 guardTarget={guardTarget}
                 onChoice={game.sendChoice}
-                disabled={scenes.busy}
+                disabled={story.busy}
               />
             )}
           </div>
@@ -175,11 +190,11 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
               rare forced self-Prince. */}
           <div
             className={`dock-seat seat me ${isTurn ? 'turn' : ''} ${me?.out ? 'out' : ''} ${
-              choiceTargets.includes(selfId) && !scenes.busy ? 'chooseable' : ''
+              choiceTargets.includes(selfId) && !story.busy ? 'chooseable' : ''
             }`}
             data-player-id={selfId}
             onClick={
-              choiceTargets.includes(selfId) && !scenes.busy ? () => pickTarget(selfId) : undefined
+              choiceTargets.includes(selfId) && !story.busy ? () => pickTarget(selfId) : undefined
             }
           >
             <div className="seat-row">
@@ -197,14 +212,14 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
                 <p className="turn-banner">{t('game.turnBanner')}</p>
               )}
               <div className="hand">
-                {view.hand.length === 0 && <p className="muted">{t('game.emptyHand')}</p>}
-                {view.hand.map((card, i) => (
+                {story.lagView.hand.length === 0 && <p className="muted">{t('game.emptyHand')}</p>}
+                {story.lagView.hand.map((card, i) => (
                   <CardView
                     key={i}
                     card={card}
                     playable={canPlay}
                     selected={selected === i}
-                    drawn={popRank === card.rank}
+                    drawn={popName === card.name}
                     onSelect={() => setSelected(selected === i ? null : i)}
                     onPlay={() => {
                       const which = i as 0 | 1;
@@ -258,7 +273,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
 
         <ManualModal open={manualOpen} onClose={() => setManualOpen(false)} />
 
-        <PlayScenes scenes={scenes} selfId={selfId} roster={view.roster} />
+        <PlayScenes scenes={story} selfId={selfId} roster={view.roster} />
       </div>
 
       <ChatDialog chat={game.chat} selfId={selfId} onSend={game.sendChat} />

@@ -19,7 +19,6 @@ import type {
   ChatMessage,
   Choice,
   ClientPacket,
-  Rank,
   ServerPacket,
   ViewState,
   WireParams,
@@ -58,10 +57,6 @@ export interface GameState {
   arrivalSeq: number;
   /** Log entry id → its arrival order (ticket 31). */
   logArrivals: Record<number, number>;
-  /** The drawer's own most recent draw (ticket 28) — the Game pops the drawn
-   *  card in the hand. `seq` re-keys the pop so a second draw restarts it. */
-  lastDraw: { rank: Rank; seq: number } | null;
-  drawSeq: number;
   /** Set when the server tears the room down under us (issue 11). */
   roomClosed: WireError | null;
   /** True after an intentional leave; the tab is back on Home with a fresh socket. */
@@ -96,12 +91,12 @@ function reducer(state: GameState, action: Action): GameState {
       const p = action.packet;
       switch (p.type) {
         case 'hello':
-          return { ...state, selfId: p.playerId, left: false, away: [], activity: [], activitySeq: 0, error: null, lastDraw: null };
+          return { ...state, selfId: p.playerId, left: false, away: [], activity: [], activitySeq: 0, error: null };
         case 'snapshot':
           // A fresh client starts from the snapshot; a resuming client that
           // kept its view folds the replayed events onto it instead.
           return state.view === null
-            ? { ...state, view: p.view, lastEventId: p.lastEventId, away: p.away, error: null, lastDraw: null }
+            ? { ...state, view: p.view, lastEventId: p.lastEventId, away: p.away, error: null }
             : state;
         case 'event':
           return state.view !== null && state.selfId !== null && p.id > state.lastEventId
@@ -119,15 +114,7 @@ function reducer(state: GameState, action: Action): GameState {
                 arrivalSeq += 1;
                 logArrivals = { ...logArrivals, [entry.id]: arrivalSeq };
               }
-              // The drawer's own draw (ticket 28): the Game pops the drawn
-              // card. Only self draws — other viewers just see the deck move.
-              let lastDraw = state.lastDraw;
-              let drawSeq = state.drawSeq;
-              if (p.event.type === 'cardDrawn' && p.event.playerId === state.selfId && p.event.card !== null) {
-                drawSeq += 1;
-                lastDraw = { rank: p.event.card.rank, seq: drawSeq };
-              }
-              return { ...state, view: next, lastEventId: p.id, arrivalSeq, logArrivals, lastDraw, drawSeq };
+              return { ...state, view: next, lastEventId: p.id, arrivalSeq, logArrivals };
             })()
             : state;
         case 'chat':
@@ -178,8 +165,6 @@ const initial: GameState = {
   activitySeq: 0,
   arrivalSeq: 0,
   logArrivals: {},
-  lastDraw: null,
-  drawSeq: 0,
   roomClosed: null,
   left: false,
   session: 0,

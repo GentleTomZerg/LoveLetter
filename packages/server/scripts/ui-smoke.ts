@@ -324,20 +324,20 @@ async function runRenderChecks(base: string, debugPort: number): Promise<void> {
 
   // Issue 13: every seat shows a public hand count; once anyone has played,
   // at least one seat holds cards represented by face-down backs.
-  const handCounts = (await tabA.eval(
-    `[...document.querySelectorAll('.seat .hand-count')].map((t) => t.textContent)`,
-  )) as string[];
-  assert.equal(handCounts.length, 2, 'both seats show a hand count');
+  // One atomic snapshot: the counts and the face-down backs must agree — a
+  // separate eval could straddle a draw release (ticket 38: the counts move
+  // at the release, not the fold) and see them a frame apart.
+  const hand = (await tabA.eval(`(() => {
+    const counts = [...document.querySelectorAll('.seat .hand-count')].map((t) => Number(t.textContent));
+    return { counts, backs: document.querySelectorAll('.seat .hand-back').length };
+  })()`)) as { counts: number[]; backs: number };
+  assert.equal(hand.counts.length, 2, 'both seats show a hand count');
   assert.ok(
-    handCounts.every((c) => /^[0-2]$/.test(c ?? '')),
-    `hand counts are numbers 0-2: ${handCounts}`,
+    hand.counts.every((c) => /^[0-2]$/.test(String(c))),
+    `hand counts are numbers 0-2: ${hand.counts}`,
   );
-  const totalHeld = handCounts.reduce((sum, c) => sum + Number(c), 0);
-  assert.equal(
-    await tabA.eval(`document.querySelectorAll('.seat .hand-back').length`),
-    totalHeld,
-    'face-down backs equal the total cards held',
-  );
+  const totalHeld = hand.counts.reduce((sum, c) => sum + c, 0);
+  assert.equal(hand.backs, totalHeld, 'face-down backs equal the total cards held');
 
   // Chat lives behind a pill → modal dialog (issue 20): open on A, send
   // (which closes the dialog), then check the relay and previews on both tabs.
@@ -862,6 +862,187 @@ async function runDrawPop(base: string, debugPort: number): Promise<void> {
   assert.ok(/Deck: \d+/.test(header), `deck count in the top bar: ${header}`);
   await assertNoErrors(tabA, tabB);
   console.log('  draw pop: the drawn card pops in the hand (rank-keyed), deck count in step');
+}
+
+// ---------------------------------------------------------------------------
+// Scenario — ticket 38: the story owns the draw moment. A draw that lands
+// while the scene queue is busy is **held** — the drawer's own card, the
+// deck count, and the seat hand counts keep their pre-draw values — and
+// **released** when the story reaches it (the queue drains), at which moment
+// the card appears, the deck drops, and the seat counts bump (the ticket-28
+// pop fires as the draw's narration). Every turn's draw lands mid-scene (the
+// previous play's scene animates), so the hold is observable on the first
+// moves. The other tab sees the deck + hand counts move at the same release
+// moment (each client lags its own story by the same scene duration).
+// ---------------------------------------------------------------------------
+
+async function runDrawSync(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+  // Both tabs must animate — hidden tabs freeze their animation clocks,
+  // which would freeze the scene queues (and the held draws with them).
+  await tabA.bringToFront();
+  await tabB.bringToFront();
+  await tabA.bringToFront();
+
+  /** One atomic snapshot of the story-related display + the draw tally. */
+  const snap = (t: CdpSession) =>
+    t.eval(`(() => {
+      const deckEl = document.querySelector('.deck-total');
+      const counts = [...document.querySelectorAll('.seat .hand-count')].map((s) => Number(s.textContent));
+      return {
+        busy: document.querySelectorAll('.scenes .scene').length > 0,
+        deck: deckEl === null ? -1 : Number(deckEl.textContent),
+        sum: counts.reduce((a, b) => a + b, 0),
+        dock: document.querySelectorAll('.dock-seat .hand button.card').length,
+        draws: document.querySelectorAll('.log li.log-draw').length,
+        roundOver: document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null,
+      };
+    })()`) as Promise<{
+      busy: boolean;
+      deck: number;
+      sum: number;
+      dock: number;
+      draws: number;
+      roundOver: boolean;
+    }>;
+
+  // Drive until a draw lands while a scene plays. The deck is the invariant
+  // that survives a play: only draws change it, and a held draw never shows
+  // — so a draw landing mid-scene leaves the deck display untouched, and the
+  // release (the queue draining) drops it. `baseline` is the previous poll's
+  // deck; the catch verifies the deck did NOT move when the draw landed. A
+  // release crossing between polls, a round reset, or a same-burst countess
+  // (its deck-drop folds at the cancellation) fails the verify and
+  // re-baselines — the next draw lands clean.
+  let seen = -1;
+  let baseline: number | null = null;
+  let caught: Awaited<ReturnType<typeof snap>> | null = null;
+  let heldB: Awaited<ReturnType<typeof snap>> | null = null;
+  for (let step = 0; step < 3000 && caught === null; step++) {
+    const s = await snap(tabA);
+    if (s.roundOver || (baseline !== null && s.deck > baseline)) {
+      // The round ended — advance it (playOneMove's auto-"Start next round"
+      // click never runs: this branch skips the move-driving), then
+      // re-baseline on the new round.
+      if (s.roundOver) {
+        await click(tabA, '.round-over button');
+        await click(tabA, '.match-over button');
+      }
+      seen = -1;
+      baseline = null;
+      continue;
+    }
+    if (baseline !== null && s.busy && s.draws > seen && s.deck === baseline) {
+      // A draw landed while a scene played and the deck did not move — the
+      // story is holding it. The other tab must be holding the same moment
+      // too (its pre-release snapshot feeds the release assertions).
+      const b = await snap(tabB);
+      if (b.busy && b.deck === baseline) {
+        caught = s;
+        heldB = b;
+        break;
+      }
+    }
+    seen = s.draws;
+    baseline = s.deck;
+    let acted = false;
+    for (const t of [tabA, tabB]) {
+      if (await playOneMove(t)) {
+        acted = true;
+        break;
+      }
+    }
+    if (!acted) await sleep(80);
+  }
+  if (caught === null) {
+    // Diagnose the stall: dump both tabs' state so a future failure is
+    // self-explanatory (this is the last-resort branch — the catch above
+    // normally fires within a handful of moves).
+    const dump = (t: CdpSession, tag: string) =>
+      t.eval(`(() => {
+        const seats = [...document.querySelectorAll('.seat')].map((s) => ({
+          turn: s.classList.contains('turn'),
+          out: s.classList.contains('out'),
+          count: s.querySelector('.hand-count')?.textContent ?? null,
+          handCards: s.querySelectorAll('.hand button.card').length,
+          playable: s.querySelectorAll('.hand button.card.playable').length,
+          name: s.querySelector('.name')?.textContent ?? null,
+        }));
+        const deckEl = document.querySelector('.deck-total');
+        return {
+          busy: document.querySelectorAll('.scenes .scene').length,
+          deck: deckEl === null ? -1 : Number(deckEl.textContent),
+          strip: document.querySelector('.log-strip-text')?.textContent ?? '',
+          seats,
+          roundOver: document.querySelector('.round-over') !== null,
+          error: document.querySelector('.error-banner')?.textContent ?? null,
+        };
+      })()`).then((d: unknown) => console.log(`[drawSync] ${tag} state:`, JSON.stringify(d)));
+    await dump(tabA, 'A');
+    await dump(tabB, 'B');
+    throw new Error('drawSync: never caught a draw mid-scene');
+  }
+  // Stability: nothing moves for a moment — the draw is still held while the
+  // scene plays out.
+  await sleep(300);
+  const held = await snap(tabA);
+  assert.equal(held.deck, caught!.deck, 'the deck stays pre-draw while the draw is held');
+  assert.equal(held.sum, caught!.sum, 'the seat hand counts stay pre-draw while the draw is held');
+  assert.equal(held.dock, caught!.dock, "the drawer's dock stays pre-draw while the draw is held");
+  const landed = held.draws - seen;
+  assert.ok(landed >= 1, `at least one draw landed mid-scene (${landed})`);
+
+  // The release — tab A's queue drains on its own (no moves are driven), the
+  // story reaches the draw, and the deck drops. No round can end meanwhile:
+  // rounds end only at a play, and the smoke stops driving.
+  await waitFor(
+    tabA,
+    `document.querySelector('.deck-total') !== null && Number(document.querySelector('.deck-total').textContent) === ${caught!.deck - landed}`,
+    25000,
+    'the deck drops at the draw release',
+  );
+  const afterA = await snap(tabA);
+  assert.equal(afterA.deck, caught!.deck - landed, 'the deck count shows the draw after the release');
+  assert.equal(afterA.sum, caught!.sum + landed, 'the seat hand counts bump at the release');
+  const grewA = afterA.dock - caught!.dock;
+
+  // The other tab sees the same moment — it is a background tab (its clocks
+  // are throttled), so bring it to front for its own drain + release.
+  await tabB.bringToFront();
+  await waitFor(
+    tabB,
+    `document.querySelector('.deck-total') !== null && Number(document.querySelector('.deck-total').textContent) === ${caught!.deck - landed}`,
+    25000,
+    'tab B deck drops at the draw release',
+  );
+  const afterB = await snap(tabB);
+  assert.equal(afterB.deck, caught!.deck - landed, 'the other tab sees the same deck after the release');
+  assert.equal(afterB.sum, heldB!.sum + landed, 'the other tab sees the hand counts bump at the release');
+  const grewB = afterB.dock - heldB!.dock;
+  // The drawers' own docks show the drawn cards (face-up) and the hand/count
+  // stays consistent — the total dock growth equals the landed draws (in 2p,
+  // the Prince's target and the next player can be the same seat, so one
+  // drawer can gain two cards in one burst).
+  assert.equal(grewA + grewB, landed, `the drawn cards appear in the drawers' docks (${landed} draws)`);
+  assert.ok(grewA >= 0 && grewB >= 0, `each drawer's dock only grows (${grewA}/${grewB})`);
+  for (const [t, grew] of [[tabA, grewA], [tabB, grewB]] as const) {
+    if (grew === 0) continue;
+    const { cards, count } = (await t.eval(`(() => {
+      const dock = document.querySelector('.dock-seat');
+      return {
+        cards: dock === null ? -1 : dock.querySelectorAll('.hand button.card').length,
+        count: dock === null ? -1 : Number(dock.querySelector('.hand-count')?.textContent ?? -1),
+      };
+    })()`)) as { cards: number; count: number };
+    assert.equal(count, cards, "the drawer's hand count matches the shown cards");
+    const lastSrc = (await t.eval(
+      `[...document.querySelectorAll('.dock-seat .hand button.card img')].map((i) => i.getAttribute('src')).at(-1)`,
+    )) as string | null;
+    assert.ok(lastSrc !== null && /^\/cards\/[1-8]\.png$/.test(lastSrc), `the drawn card stays rank-keyed: ${lastSrc}`);
+  }
+  await assertNoErrors(tabA, tabB);
+  console.log(`  draw sync: ${landed} draw(s) held mid-scene, released at the drain — drawer's dock, deck, and seat counts move together`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1676,6 +1857,8 @@ async function main(): Promise<void> {
     await runSceneAnimations(base, debugPort);
     console.log('[ui-smoke] the draw pops the new card (ticket 28)…');
     await runDrawPop(base, debugPort);
+    console.log('[ui-smoke] the story owns the draw moment — held until the scene drains (ticket 38)…');
+    await runDrawSync(base, debugPort);
     console.log('[ui-smoke] strip follows the scene, the round waits (ticket 24)…');
     await runSceneBlocking(base, debugPort);
     console.log('[ui-smoke] round/match-end overlay waits for the story (ticket 37)…');
@@ -1694,7 +1877,8 @@ async function main(): Promise<void> {
     console.log(
       'UI SMOKE OK — narrow-phone layout, render claims, full 2p match (all 8 cards) + rematch, '
       + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), round/match-end '
-      + 'overlay waits for the story (ticket 37), select-confirm regret '
+      + 'overlay waits for the story (ticket 37), draw held until the story reaches it (ticket 38), '
+      + 'select-confirm regret '
       + '(ticket 25), hand/count sync around King trades (ticket 30), draw pop (ticket 28), chat close '
       + 'button (ticket 29), reload/resume with chat restored, fixed stage + overlays + portrait lock '
       + '(ticket 33), own-seat dock (ticket 35), no error banners anywhere',

@@ -20,14 +20,14 @@ export interface PlayerView {
   handCount: number;
 }
 
-export type LogKind = 'play' | 'fizzle' | 'choice' | 'guard' | 'baron' | 'prince' | 'king' | 'peek' | 'discard' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'leave' | 'info' | 'miss' | 'tie';
+export type LogKind = 'play' | 'fizzle' | 'choice' | 'guard' | 'baron' | 'prince' | 'king' | 'peek' | 'discard' | 'draw' | 'reveal' | 'eliminate' | 'round' | 'match' | 'join' | 'leave' | 'info' | 'miss' | 'tie';
 
 /**
  * Structured facts behind a log entry. The client's locale dictionary turns
  * them into display text (ADR-0003): players are ids (the renderer resolves
  * "You"/names per locale), cards are ranks, info lines carry a `what` sub-key.
  */
-export type LogParams = Record<string, string | number | string[]>;
+export type LogParams = Record<string, string | number | boolean | string[]>;
 
 export interface LogEntry {
   id: number;
@@ -178,17 +178,28 @@ export function reduceView(view: ViewState | null, event: Event, selfId: string)
       v.players.find((p) => p.id === event.playerId)!.protected = false;
       break;
 
-    case 'cardDrawn':
+    case 'cardDrawn': {
       // Every draw is public table state (the deck shrinks); the card itself
       // only arrives on the drawing player's own stream. A draw when the deck
       // is already empty is the face-down burned card leaving the burn pile
       // (ruling 4 — the face-up 2-player removals are never drawn).
+      const shrunk = v.deckCount > 0;
       if (v.deckCount === 0) v.burnedCount = 0;
       v.deckCount = Math.max(0, v.deckCount - 1);
       // A draw always puts one more card in that player's hand.
       v.players.find((p) => p.id === event.playerId)!.handCount += 1;
       if (event.playerId === selfId && event.card) v.hand = [...v.hand, event.card];
+      // Ticket 38: the draw becomes a log entry — the story seam can hold and
+      // release it (the drawer's own card, the deck count, and the seat hand
+      // counts keep their pre-draw values while the scene queue plays). The
+      // drawn card's name only on the drawer's own stream (privacy, same as
+      // peek); `shrunk` false for the burned-card draw (ruling 4 — the deck
+      // count does not shrink), so the lagged deck display is not inflated.
+      const params: LogParams = { playerId: event.playerId, shrunk };
+      if (event.playerId === selfId && event.card) params.name = event.card.name;
+      log('draw', params);
       break;
+    }
 
     case 'cardPlayed': {
       const player = v.players.find((p) => p.id === event.playerId);
