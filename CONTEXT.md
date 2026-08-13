@@ -44,6 +44,10 @@ A player under the Handmaid's effect, unchoosable by other players' cards until 
 **Burned**:
 The card removed face-down from the deck at setup, unknown to all; used in the adopted 2-player ruling for a Prince empty-deck draw.
 
+**Draw**:
+The card taken from the deck — at the start of a turn, or for a Prince target after their forced discard. A draw on an empty deck takes the single face-down burned card (2-player ruling). The deck shrinking is public; the card itself is private to the drawer.
+_Avoid_: supplement, refill
+
 **PendingChoice**:
 The engine state between the card's play and the resolution of its follow-up effect (Guard: player + card guess; Priest/Baron/Prince/King: target player). The turn is not over until resolved.
 

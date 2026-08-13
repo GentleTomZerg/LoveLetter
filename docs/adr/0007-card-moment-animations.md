@@ -57,3 +57,16 @@ The completeness invariant — every branch of every card ends in a terminating 
 The Prince always has a legal target (it may target itself), so it never fizzles. This is a test-enforced invariant, not a type-enforced one — the table plus the per-card suites are the enforcement.
 
 Status: accepted. Source: design discussion (ticket 26).
+
+## Revision — the story owns display timing; state display leads, and input and round boundaries wait (tickets 37 + 38)
+
+Ticket 28's draw pop, ticket 24's input wait, and ticket 24's strip-follow were each ad-hoc bridges between the client's two clocks — the state clock (events fold into the view instantly) and the story clock (the scene queue plays at its own pace). Two playtest bugs made the seams visible: the round/match-end overlay popped over the still-animating final scene (z 35 over the scenes' 20), and a draw visibly completed (card in hand, deck down) while the previous action's scene still played.
+
+The client now has **one presentation seam** (`useStory`): it owns the scene queue, the story position, and a **lagged display view** — the true view with not-yet-told draws withheld. Game renders story-related display (hand, deck count, seat hand counts) only from the lagged view. Two rules replace the ad-hoc gates:
+
+- **Input and round boundaries wait for the story.** The hand/choice already wait (`busy`); now the round/match-end overlays wait too — the win panel appears only when the final scene and banner have drained ("Start next round"/"Rematch" cannot be clicked mid-story).
+- **State display leads; the story narrates.** The drawer's own card, the deck number, and seat counts are truth and render the moment the story reaches them — which, because the engine already orders draws after their resolution, is the real-world order. Draws became log entries (`draw`, ticket 38) so the seam derives everything from the log: one input, three outputs (scenes, held draws, released draws).
+
+The retelling model is unchanged: scenes remain pure client presentation (ADR-0003 untouched), reduced-motion disables them, reconnect never replays, privacy holds (the drawn card's name reaches only the drawer's stream). The engine and the event stream are untouched.
+
+Status: accepted. Source: design discussion (tickets 37 + 38, grilling session 2025).
