@@ -3,6 +3,7 @@ import type { Card, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Ra
 import type { Game } from '../useGame';
 import { useLocale, joinLocalizedList } from '../i18n';
 import { formatLogEntry, entryRank, mergeLog, type ActivityLine, type LogContext } from '../i18n/logFormat';
+import { endEntryOf } from '../scenes';
 import { PlayScenes, usePlayScenes } from './PlayScenes';
 
 /**
@@ -25,6 +26,22 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
   // queue drains, so nobody acts over a resolution that is still animating.
   const canPlay = view.phase === 'round' && myTurn && view.pendingChoice === null && !scenes.busy;
   const myChoice = view.pendingChoice !== null && view.pendingChoice.playerId === selfId;
+
+  // Ticket 37: the round/match-end overlays wait for the story — the win
+  // panel appears only once the final scene and the win banner have drained
+  // (ADR-0007: the win banner always follows the final scene, never
+  // interrupting it). `busy` alone would flash the panel for one frame: the
+  // phase flips on the round entry's render, but the banner enqueues a
+  // frame later (effects run post-render). `reachedEndId` — the round/match
+  // entry the story has reached (its banner enqueued, or the entry skipped
+  // by reduced motion / the mount baseline) — closes that frame; reduced
+  // motion and reconnect never enqueue, so the story has reached the entry
+  // trivially and the panel appears immediately. `endEntryId` is absent
+  // only on a resumed tab (the snapshot's log is empty — the reducer skips
+  // the replayed events it already covers), where the story never narrates
+  // the phase: nothing to wait for, so `busy` is the only gate.
+  const endEntryId = endEntryOf(view.log)?.id;
+  const endStoryDone = !scenes.busy && (endEntryId === undefined || scenes.reachedEndId === endEntryId);
 
   // Ticket 35: the Guard's tap-the-seat first step — the chosen target stays
   // local until a card chip is tapped (tap another lit seat to switch).
@@ -203,8 +220,11 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
 
         {/* Ticket 33: the round/match end panels are centered overlay cards
             ("Start next round" / "Rematch"); the top bar stays above them so
-            leave/manual/log stay reachable. */}
-        {view.phase === 'roundEnded' && (
+            leave/manual/log stay reachable. Ticket 37: they wait for the
+            story — the panel exists only after the final scene + banner
+            drained, so it never covers the story and "Start next round"
+            cannot be clicked mid-story. */}
+        {view.phase === 'roundEnded' && endStoryDone && (
           <div className="overlay round-end-overlay">
             <div className="panel round-over">
               <p>
@@ -216,7 +236,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
           </div>
         )}
 
-        {view.phase === 'matchEnded' && view.matchWinnerId && (
+        {view.phase === 'matchEnded' && view.matchWinnerId && endStoryDone && (
           <div className="overlay match-end-overlay">
             <div className="panel match-over">
               <h2>{t('game.matchWon', { name: playerName(view.matchWinnerId) })}</h2>

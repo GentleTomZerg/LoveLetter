@@ -37,6 +37,7 @@ import {
   scenesFor,
   sceneStages,
   STAGE_MS,
+  endEntryOf,
   type Scene,
   type SceneOrBanner,
   type SceneState,
@@ -322,11 +323,20 @@ function BannerView({ banner, onDone }: { banner: Banner; onDone: () => void }) 
  * currently-animating beat. `busy` blocks the hand and choice buttons while
  * a scene plays; `currentEntry` is the log entry the head scene narrates,
  * which the top strip follows so it never races ahead of the animation.
+ *
+ * Ticket 37: `reachedEndId` is the log id of the round/match entry the
+ * story has reached — its banner enqueued (motion on) or the entry
+ * explicitly skipped (reduced motion / the mount baseline). The Game
+ * screen gates the round/match-end overlays on it, so the win panel can
+ * never flash in the frame before the banner enqueues (the phase flips on
+ * the round entry's render; effects run a frame later).
  */
 export interface PlayScenesApi {
   queue: SceneOrBanner[];
   busy: boolean;
   currentEntry: LogEntry | undefined;
+  /** Ticket 37: the round/match entry the story has reached (see above). */
+  reachedEndId: number | undefined;
   /** Drain the head scene — key-filter is idempotent, so a late drain can
    *  never skip the next scene. */
   advance: (key: string) => void;
@@ -337,6 +347,14 @@ export interface PlayScenesApi {
  * baseline skips the replayed history; prefers-reduced-motion enqueues
  * nothing, so `busy` stays false and the strip keeps showing the latest
  * entry — exactly as before.
+ *
+ * Ticket 37: `reachedEndId` tracks the round/match entry the story has
+ * reached — the banner enqueued for it, or the entry explicitly skipped
+ * (reduced motion / the mount baseline). The Game screen gates the
+ * round/match-end overlays on it (the win panel waits for the story) and
+ * on the anti-flash frame (the phase flips on the round entry's render,
+ * but the banner enqueues a frame later — effects run post-render, so
+ * raw `busy` would flash the panel once).
  */
 export function usePlayScenes(
   log: LogEntry[],
@@ -346,18 +364,30 @@ export function usePlayScenes(
 ): PlayScenesApi {
   const { t, cardName } = useLocale();
   const [queue, setQueue] = useState<SceneOrBanner[]>([]);
+  const [reachedEndId, setReachedEndId] = useState<number | undefined>(undefined);
   const stateRef = useRef<SceneState>(initialSceneState());
   const seenIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const ctx: LogContext = { selfId, roster, t, cardName };
     const maxId = log.reduce((m, e) => Math.max(m, e.id), 0);
+    // Ticket 37: the round/match entry of the current phase — the story
+    // reaching it (narrating it, or explicitly skipping it) is what unblocks
+    // the round/match-end overlay.
+    const endEntry = endEntryOf(log);
     if (seenIdRef.current === null) {
       seenIdRef.current = maxId; // mount baseline — the replayed history never animates
+      // Ticket 37: the baseline skips the whole log — the story has reached
+      // the round/match entry trivially (nothing will ever narrate it), so
+      // a reconnecting player sees the end panel immediately.
+      if (endEntry !== undefined) setReachedEndId(endEntry.id);
       return;
     }
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       seenIdRef.current = maxId;
+      // Ticket 37: motion off enqueues nothing — the story reached the entry
+      // by skipping it; the end panel can show immediately.
+      if (endEntry !== undefined) setReachedEndId(endEntry.id);
       return; // motion off — the top bar text carries the moment
     }
     const fresh = log.filter((e) => e.id > seenIdRef.current!);
@@ -365,6 +395,10 @@ export function usePlayScenes(
     const added = scenesFor(fresh, stateRef.current, (entry) => formatLogEntry(entry, ctx), { selfId, hand });
     stateRef.current = added.state;
     if (added.scenes.length > 0) setQueue((q) => [...q, ...added.scenes]);
+    // Ticket 37: the banner enqueued for the round/match entry marks the
+    // story having reached it — the round/match-end overlay waits on this.
+    const banner = [...added.scenes].reverse().find((s) => s.kind === 'banner');
+    if (banner !== undefined && banner.entryId !== undefined) setReachedEndId(banner.entryId);
   }, [log]);
 
   const advance = useCallback((key: string) => {
@@ -375,7 +409,7 @@ export function usePlayScenes(
   const currentEntry =
     head !== null && head.entryId !== undefined ? log.find((e) => e.id === head.entryId) : undefined;
 
-  return { queue, busy: queue.length > 0, currentEntry, advance };
+  return { queue, busy: queue.length > 0, currentEntry, reachedEndId, advance };
 }
 
 export function PlayScenes({ scenes, selfId, roster }: { scenes: PlayScenesApi; selfId: string; roster: Record<string, string> }) {

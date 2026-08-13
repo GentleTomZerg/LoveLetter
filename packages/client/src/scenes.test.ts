@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { LogEntry } from '@love-letter/core';
 import { t } from './i18n';
 import { CARD_TEXT } from './i18n/cards';
-import { initialSceneState, scenesFor, sceneStages, type Scene, type SceneLoc, type SceneOrBanner } from './scenes';
+import { initialSceneState, scenesFor, sceneStages, endEntryOf, type Scene, type SceneLoc, type SceneOrBanner } from './scenes';
 
 const entry = (id: number, kind: LogEntry['kind'], params: LogEntry['params']): LogEntry => ({ id, kind, params });
 const fmt = () => 'banner text';
@@ -348,6 +348,26 @@ describe('scenesFor (ticket 23 + 26) — scene builder', () => {
   it('ignores completion entries that match no held scene (defensive)', () => {
     expect(run([entry(1, 'miss', { playerId: 'A', targetId: 'B', rank: 8, played: 1 })]).scenes).toEqual([]);
     expect(run([entry(1, 'tie', { playerId: 'A', targetId: 'B', rank: 3 })]).scenes).toEqual([]);
+  });
+});
+
+describe('endEntryOf (ticket 37) — the round/match entry of the current phase', () => {
+  it('is the last round/match entry in the log (the log is append-only across rounds)', () => {
+    const log = [
+      entry(1, 'info', { what: 'roundStarted', roundNumber: 1 }),
+      entry(2, 'play', { playerId: 'A', rank: 4 }),
+      entry(3, 'round', { winners: ['A'], reason: 'last-standing' }),
+      entry(4, 'info', { what: 'roundStarted', roundNumber: 2 }),
+      entry(5, 'play', { playerId: 'B', rank: 4 }),
+      entry(6, 'match', { winnerId: 'B' }),
+    ];
+    expect(endEntryOf(log)?.id).toBe(6);
+    expect(endEntryOf(log.slice(0, 3))?.id).toBe(3);
+  });
+
+  it('is undefined while no round has ended (and on a resumed tab, whose log starts empty)', () => {
+    expect(endEntryOf([entry(1, 'info', { what: 'roundStarted', roundNumber: 1 })])).toBeUndefined();
+    expect(endEntryOf([])).toBeUndefined();
   });
 });
 

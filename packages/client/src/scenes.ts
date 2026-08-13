@@ -110,6 +110,14 @@ export interface Banner {
 
 export type SceneOrBanner = Scene | Banner;
 
+/** The round/match entry of the current phase — the last one in the log
+ *  (the log is append-only across rounds). The story reaching it (narrating
+ *  it, or explicitly skipping it) is what unblocks the round/match-end
+ *  overlay (ticket 37). */
+export function endEntryOf(log: LogEntry[]): LogEntry | undefined {
+  return log.filter((e) => e.kind === 'round' || e.kind === 'match').at(-1);
+}
+
 /** The builder's memory across batches. */
 export interface SceneState {
   /** Next scene key number (unique per client). */

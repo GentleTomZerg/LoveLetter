@@ -18,6 +18,10 @@
  *               drain; the strip follows the animating beat (the win line
  *               appears only when the win banner plays); under reduced motion
  *               nothing enqueues, so the round never blocks.
+ *  - roundEndWaits  ticket 37: the round/match-end overlays wait for the
+ *               story — the panel exists only after the final scene + banner
+ *               drain (mid-story there is no button to click); reduced-motion
+ *               and reconnect show the panel immediately.
  *  - selectConfirm  ticket 25: hand plays are select-confirm — clicking a
  *               card selects it (highlight + a Play action bar naming it),
  *               clicking the other card switches the selection, and nothing
@@ -976,9 +980,13 @@ async function runSceneBlocking(base: string, debugPort: number): Promise<void> 
   //    Ticket 24's blocking pauses the round ~3s per move, so play the early
   //    rounds with motion off (nothing enqueues, nothing blocks — fast), and
   //    switch animations on when a player reaches 6/7 tokens: the next round
-  //    ends the match and plays the final scene + win banner. Poll the win
-  //    transition — while the final scene (a non-banner head) plays, the
-  //    strip must NOT show the win line; when the win banner plays, it must.
+  //    ends the match and plays the final scene + win banner. The win
+  //    transition is observed DURING play (ticket 37: the end overlay now
+  //    appears only after the story drains, so the banner is gone by the
+  //    time the overlay shows — the observation must ride the story): while
+  //    the final scene (a non-banner head) plays, the strip must NOT show
+  //    the win line and no end overlay may exist; when the win banner
+  //    plays, the strip must show it.
   await tabA.setReducedMotion(true);
   await tabB.setReducedMotion(true);
   await playUntil(
@@ -1000,33 +1008,53 @@ async function runSceneBlocking(base: string, debugPort: number): Promise<void> 
     5000,
     'motion emulation propagates',
   );
-  await playUntil(
-    [tabA, tabB],
-    () => tabA.eval(`document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null`),
-    5000,
-  );
   let sawPreBanner = false;
   let sawBanner = false;
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline && (!sawPreBanner || !sawBanner)) {
-    const banner = (await tabA.eval(`document.querySelector('.scene-banner') !== null`)) as boolean;
-    const winRe = /won the (round|match)/;
-    const strip = (await tabA.eval(`document.querySelector('.log-strip-text')?.textContent ?? ''`)) as string;
+  let matchEnded = false;
+  const winRe = /won the (round|match)/;
+  const deadline = Date.now() + 180_000;
+  while (Date.now() < deadline && !matchEnded) {
+    // One atomic snapshot per iteration — the win transition and the overlay
+    // appearance can land between separate evals, and the assertions below
+    // must see one consistent moment.
+    const { banner, strip, sceneActive, endOverlay, matchOver } = (await tabA.eval(`(() => {
+      return {
+        banner: document.querySelector('.scene-banner') !== null,
+        strip: document.querySelector('.log-strip-text')?.textContent ?? '',
+        sceneActive: document.querySelectorAll('.scenes .scene').length > 0,
+        endOverlay:
+          document.querySelector('.round-over') !== null || document.querySelector('.match-over') !== null,
+        matchOver: document.querySelector('.match-over') !== null,
+      };
+    })()`)) as { banner: boolean; strip: string; sceneActive: boolean; endOverlay: boolean; matchOver: boolean };
     const hasWin = winRe.test(strip);
     if (banner) {
       assert.equal(hasWin, true, 'the win line shows while the win banner plays');
       sawBanner = true;
-    } else {
-      const sceneActive = (await tabA.eval(`document.querySelectorAll('.scenes .scene').length > 0`)) as boolean;
-      if (sceneActive) {
-        assert.equal(hasWin, false, 'the win line never races ahead of the final scene');
-        sawPreBanner = true;
+    } else if (sceneActive) {
+      assert.equal(hasWin, false, 'the win line never races ahead of the final scene');
+      // Ticket 37: no end overlay may exist while the story plays — the
+      // pre-drain panel cannot be clicked (there is no button).
+      assert.equal(endOverlay, false, 'the end overlay never covers the story');
+      sawPreBanner = true;
+    }
+    if (matchOver) {
+      matchEnded = true;
+      break; // the overlay waited for the story — it appears only at the drain
+    }
+    if (await click(tabA, '.round-over button')) continue; // a plain round end — keep going
+    let acted = false;
+    for (const t of [tabA, tabB]) {
+      if (await playOneMove(t, true)) {
+        acted = true;
+        break;
       }
     }
-    await sleep(50);
+    if (!acted) await sleep(80);
   }
   assert.ok(sawBanner, 'the win banner was caught');
   assert.ok(sawPreBanner, 'the pre-banner final scene was caught — the strip does not race ahead');
+  assert.ok(matchEnded, 'the match ended');
   await assertNoErrors(tabA, tabB);
 
   // 3. Reduced motion: nothing enqueues, so the round never blocks. Play a
@@ -1069,6 +1097,231 @@ async function runSceneBlocking(base: string, debugPort: number): Promise<void> 
   assert.ok(ended, 'a round ends under reduced motion — moves were never blocked');
   assert.notEqual((await logText(tabA)) as string, logBefore, 'moves happened under reduced motion');
   await assertNoErrors(tabA, tabB);
+}
+
+// ---------------------------------------------------------------------------
+// Scenario — ticket 37: the round/match-end overlays wait for the story.
+// The win panel ("Start next round" / "Rematch") exists only after the
+// final scene + win banner have drained — it never covers the story, and
+// the button cannot be clicked mid-story (there is no button). Reduced
+// motion and reconnect never enqueue scenes, so the panel appears
+// immediately there. No error banners anywhere.
+// ---------------------------------------------------------------------------
+
+async function runRoundEndWaits(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB] = await openTabs(debugPort, 2);
+  await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
+  // Both tabs must animate — hidden headless tabs freeze their animation
+  // clocks, which would freeze their scene queues (and with ticket 24's
+  // blocking, their hands) forever.
+  await tabA.bringToFront();
+  await tabB.bringToFront();
+  await tabA.bringToFront();
+
+  // Drive to 5/7 with motion off (fast — nothing enqueues, nothing blocks).
+  // Round 6 then ends with a plain round-end overlay, round 7 ends the
+  // match — both with the story playing (motion on), so the gate is
+  // observable on both overlays.
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+  await waitFor(
+    tabA,
+    `window.matchMedia('(prefers-reduced-motion: reduce)').matches === true`,
+    5000,
+    'motion off propagates',
+  );
+  await playUntil(
+    [tabA, tabB],
+    () => tabA.eval(
+      `[...document.querySelectorAll('.seat .tokens')].some((t) => t.textContent.includes('5 / 7'))`,
+    ),
+    5000,
+  );
+  // Consume the round-5 end overlay (it appeared instantly — motion was
+  // off); the rounds observed below end with the story playing.
+  await click(tabA, '.round-over button');
+  await waitFor(tabA, `document.querySelector('.round-over') === null`, 10000, 'round 5 overlay consumed');
+  await tabA.setReducedMotion(false);
+  await tabB.setReducedMotion(false);
+  await waitFor(
+    tabA,
+    `window.matchMedia('(prefers-reduced-motion: reduce)').matches === false`,
+    5000,
+    'motion emulation propagates',
+  );
+
+  // Observe the plain round end (round 6 — someone is at 5/7, so this round
+  // can never end the match) with the story on. Invariant (ticket 37):
+  // while any scene animates, no end overlay may exist — the pre-drain
+  // panel cannot be clicked (there is no button); the overlay appears only
+  // after the queue drains.
+  let sawRoundOver = false;
+  let sawPreDrain = false;
+  const deadlineA = Date.now() + 120_000;
+  while (Date.now() < deadlineA && !sawRoundOver) {
+    // One atomic snapshot per iteration — the phase flip, the drain, and the
+    // overlay appearance can all land between separate evals, and the
+    // assertions below must see one consistent moment.
+    const { sceneActive, roundOver, matchOver } = (await tabA.eval(`(() => {
+      return {
+        sceneActive: document.querySelectorAll('.scenes .scene').length > 0,
+        roundOver: document.querySelector('.round-over') !== null,
+        matchOver: document.querySelector('.match-over') !== null,
+      };
+    })()`)) as { sceneActive: boolean; roundOver: boolean; matchOver: boolean };
+    if (sceneActive) {
+      assert.equal(roundOver, false, 'the round-end overlay never covers the story');
+      assert.equal(matchOver, false, 'the match-end overlay never covers the story');
+      sawPreDrain = true;
+    }
+    if (roundOver) {
+      assert.equal(sceneActive, false, 'the round-end overlay appears only after the story drains');
+      sawRoundOver = true;
+      await click(tabA, '.round-over button');
+      break; // the plain round end is observed — the match continues
+    }
+    let acted = false;
+    for (const t of [tabA, tabB]) {
+      if (await playOneMove(t, true)) {
+        acted = true;
+        break;
+      }
+    }
+    if (!acted) await sleep(80);
+  }
+  assert.ok(sawRoundOver, 'a plain round-end overlay appeared after the story drained (motion on)');
+
+  // Bridge to the match-deciding round with motion off (fast — nothing
+  // enqueues, nothing blocks) so the story only plays for the two observed
+  // rounds. After round 6 either the 5/7 player holds 6/7 or the round's
+  // winner does; the next round that a 6/7 holder wins ends the match.
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+  await waitFor(
+    tabA,
+    `window.matchMedia('(prefers-reduced-motion: reduce)').matches === true`,
+    5000,
+    'motion off propagates',
+  );
+  await playUntil(
+    [tabA, tabB],
+    () => tabA.eval(
+      `[...document.querySelectorAll('.seat .tokens')].some((t) => t.textContent.includes('6 / 7'))`,
+    ),
+    5000,
+  );
+  // Consume the bridge's round-over (motion off — it appeared instantly).
+  await click(tabA, '.round-over button');
+  await waitFor(tabA, `document.querySelector('.round-over') === null`, 10000, 'bridge overlay consumed');
+  await tabA.setReducedMotion(false);
+  await tabB.setReducedMotion(false);
+  await waitFor(
+    tabA,
+    `window.matchMedia('(prefers-reduced-motion: reduce)').matches === false`,
+    5000,
+    'motion emulation propagates',
+  );
+
+  // Observe the match end (a 6/7 holder wins the final round) with the
+  // story on — the match-end overlay gets the same gate as the round-end
+  // one: it appears only after the story drains, never over it.
+  let sawMatchOver = false;
+  const deadlineB = Date.now() + 240_000;
+  while (Date.now() < deadlineB && !sawMatchOver) {
+    const { sceneActive, roundOver, matchOver } = (await tabA.eval(`(() => {
+      return {
+        sceneActive: document.querySelectorAll('.scenes .scene').length > 0,
+        roundOver: document.querySelector('.round-over') !== null,
+        matchOver: document.querySelector('.match-over') !== null,
+      };
+    })()`)) as { sceneActive: boolean; roundOver: boolean; matchOver: boolean };
+    if (sceneActive) {
+      assert.equal(roundOver, false, 'the round-end overlay never covers the story');
+      assert.equal(matchOver, false, 'the match-end overlay never covers the story');
+      sawPreDrain = true;
+    }
+    if (matchOver) {
+      assert.equal(sceneActive, false, 'the match-end overlay appears only after the story drains');
+      sawMatchOver = true;
+      await click(tabA, '.match-over button');
+      break; // the rematch feeds the reduced-motion leg below
+    }
+    if (roundOver) await click(tabA, '.round-over button'); // a 6/7 holder lost — keep going
+    let acted = false;
+    for (const t of [tabA, tabB]) {
+      if (await playOneMove(t, true)) {
+        acted = true;
+        break;
+      }
+    }
+    if (!acted) await sleep(80);
+  }
+  assert.ok(sawMatchOver, 'the match-end overlay appeared after the story drained (motion on)');
+  assert.ok(sawPreDrain, 'the pre-drain state was caught — the story played with no overlay');
+
+  // The rematch click above started a fresh match — wait for it to land
+  // before the reduced-motion leg, so its round-end overlay belongs to that
+  // leg and not to the previous match.
+  await waitFor(
+    tabA,
+    `document.querySelector('.log')?.textContent.includes('Rematch')`,
+    10000,
+    'rematch starts',
+  );
+
+  // The rematch click above started a fresh match (0/7). Reduced motion:
+  // nothing ever enqueues, so the panel appears the moment the round ends —
+  // the story has nothing to tell.
+  await tabA.setReducedMotion(true);
+  await tabB.setReducedMotion(true);
+  await waitFor(
+    tabA,
+    `window.matchMedia('(prefers-reduced-motion: reduce)').matches === true`,
+    5000,
+    'motion off propagates',
+  );
+  let ended = false;
+  for (let step = 0; step < 3000; step++) {
+    if ((await tabA.eval(`document.querySelector('.round-over') !== null`)) as boolean) {
+      ended = true;
+      break;
+    }
+    assert.equal(
+      await tabA.eval(`document.querySelectorAll('.scenes .scene').length`),
+      0,
+      'no scenes under prefers-reduced-motion',
+    );
+    let acted = false;
+    for (const t of [tabA, tabB]) {
+      if (await playOneMove(t, true)) {
+        acted = true;
+        break;
+      }
+    }
+    if (!acted) await sleep(80);
+  }
+  assert.ok(ended, 'a round ended under reduced motion — the moves were never blocked');
+  assert.equal(
+    await tabA.eval(`document.querySelector('.round-over button') !== null`),
+    true,
+    'the round-end panel exists — and its button is clickable — under reduced motion',
+  );
+
+  // Reconnect: a reload mid-round-end resumes from the snapshot. The mount
+  // baseline skips the replayed history, so the panel appears immediately —
+  // nothing animates, nothing to wait for.
+  await tabA.reload();
+  await waitFor(tabA, `document.querySelector('.screen.game') !== null`, 15000, 'game screen after reload');
+  await waitFor(tabA, `document.querySelector('.round-over') !== null`, 10000, 'round-end panel after reload');
+  assert.equal(
+    await tabA.eval(`document.querySelectorAll('.scenes .scene').length`),
+    0,
+    'no scenes on the resumed tab',
+  );
+  await click(tabA, '.round-over button');
+  await waitFor(tabA, `document.querySelector('.round-over') === null`, 10000, 'start next round after resume');
+  await assertNoErrors(tabA, tabB);
+  console.log('  round-end waits: panel after the story (motion on), immediate under reduced motion + resume');
 }
 
 // ---------------------------------------------------------------------------
@@ -1425,6 +1678,8 @@ async function main(): Promise<void> {
     await runDrawPop(base, debugPort);
     console.log('[ui-smoke] strip follows the scene, the round waits (ticket 24)…');
     await runSceneBlocking(base, debugPort);
+    console.log('[ui-smoke] round/match-end overlay waits for the story (ticket 37)…');
+    await runRoundEndWaits(base, debugPort);
     console.log('[ui-smoke] select-confirm regret for hand plays (ticket 25)…');
     await runSelectConfirm(base, debugPort);
     console.log('[ui-smoke] hand area / scoreboard count around King trades (ticket 30)…');
@@ -1438,7 +1693,8 @@ async function main(): Promise<void> {
 
     console.log(
       'UI SMOKE OK — narrow-phone layout, render claims, full 2p match (all 8 cards) + rematch, '
-      + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), select-confirm regret '
+      + '3p/4p token targets, scene blocking + strip-follows-scene (ticket 24), round/match-end '
+      + 'overlay waits for the story (ticket 37), select-confirm regret '
       + '(ticket 25), hand/count sync around King trades (ticket 30), draw pop (ticket 28), chat close '
       + 'button (ticket 29), reload/resume with chat restored, fixed stage + overlays + portrait lock '
       + '(ticket 33), own-seat dock (ticket 35), no error banners anywhere',
