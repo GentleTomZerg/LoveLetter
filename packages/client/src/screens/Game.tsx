@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Card, CardName, ChatMessage, Choice, LogEntry, PendingChoice, PlayerView, Rank, ViewState } from '@love-letter/core';
+import { CARD_COUNTS } from '@love-letter/core';
 import type { Game } from '../useGame';
 import { useLocale, joinLocalizedList } from '../i18n';
 import { formatLogEntry, entryRank, mergeLog, type ActivityLine, type LogContext } from '../i18n/logFormat';
@@ -604,7 +605,12 @@ function LogModal({
   );
 }
 
-/** The eight cards, rank / name / effect (the manual's second section). */
+/**
+ * The eight cards, rank / count / name / effect (the manual's second
+ * section, ticket 34 + 39). The per-rank deck count comes from core's
+ * CARD_COUNTS (derived from DECK_COMPOSITION) — an extended deck updates
+ * this list automatically (DESIGN Q2).
+ */
 function CardAbilityList() {
   const ranks: Rank[] = [1, 2, 3, 4, 5, 6, 7, 8];
   const { t, cardName, cardEffect } = useLocale();
@@ -614,7 +620,7 @@ function CardAbilityList() {
         <li key={rank}>
           <CardThumb rank={rank} className="ability-thumb" />
           <span className="ability-text">
-            <strong>{cardName(rank)}</strong> ({rank}) — {cardEffect(rank)}
+            <strong>{cardName(rank)}</strong> ×{CARD_COUNTS[rank]} ({rank}) — {cardEffect(rank)}
           </span>
         </li>
       ))}

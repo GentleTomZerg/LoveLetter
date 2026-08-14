@@ -567,6 +567,19 @@ async function runFixedStage(base: string, debugPort: number): Promise<void> {
     8,
     'all eight cards listed with their effects',
   );
+  // Ticket 39: each row shows its deck count (from core's CARD_COUNTS) —
+  // the first row is Guard (×5), the last is Princess (×1).
+  assert.ok(
+    (await tabA.eval(`document.querySelector('.cards-section .abilities-list li').textContent`)).includes('×5'),
+    'the Guard row shows its deck count (×5)',
+  );
+  assert.ok(
+    (await tabA.eval(`(() => {
+      const lis = document.querySelectorAll('.cards-section .abilities-list li');
+      return lis[lis.length - 1].textContent;
+    })()`)).includes('×1'),
+    'the Princess row shows its deck count (×1)',
+  );
   assert.equal(
     await tabA.eval(`document.querySelectorAll('.rulings-section .manual-list li').length`),
     4,

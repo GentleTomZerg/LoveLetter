@@ -30,6 +30,15 @@ const DECK_COMPOSITION: ReadonlyArray<{ rank: Rank; count: number }> = [
   { rank: 8, count: 1 }, // Princess ×1
 ];
 
+/**
+ * How many copies of each rank are in the deck, derived from the composition
+ * (ticket 39). DECK_COMPOSITION stays the single source of deck truth — an
+ * extended deck updates both buildDeck() and the manual's counts.
+ */
+export const CARD_COUNTS: Record<Rank, number> = Object.fromEntries(
+  DECK_COMPOSITION.map(({ rank, count }) => [rank, count]),
+) as Record<Rank, number>;
+
 /** The full 16-card deck, in composition order (caller shuffles). */
 export function buildDeck(): Card[] {
   const deck: Card[] = [];
