@@ -2,6 +2,7 @@ node_modules/
 dist/
 .pi-subagents/
 .pi/subagents/
+teaching/
 *.log
 .DS_Store
 .env
