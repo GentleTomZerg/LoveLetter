@@ -1,6 +1,6 @@
 # Love Letter Online — Design
 
-Primary design record. Source: grilling session (stateless `/grilling` primitive, handoff `love-letter-handoff.md` — every decision Q1–Q21 was settled and approved; nothing left open). Rules details live in `docs/love-letter-rules-spec.md` (authoritative, cited); art licensing in `docs/love-letter-art-research.md`.
+Primary design record. Source: grilling session (stateless `/grilling` primitive, handoff `love-letter-handoff.md` — every decision Q1–Q23 was settled and approved; nothing left open). Rules details live in `docs/love-letter-rules-spec.md` (authoritative, cited); art licensing in `docs/love-letter-art-research.md`.
 
 ## The project
 
@@ -11,7 +11,7 @@ Primary design record. Source: grilling session (stateless `/grilling` primitive
 1. **Learning project** — the user is learning TypeScript: clean, explainable code over cleverness.
 2. **Playable with friends** — it must actually work for friends on a LAN.
 
-## Locked decisions (Q1–Q21)
+## Locked decisions (Q1–Q23)
 
 | # | Decision | Choice | Note |
 |---|---|---|---|
@@ -36,6 +36,8 @@ Primary design record. Source: grilling session (stateless `/grilling` primitive
 | Q19 | MVP scope | **As proposed** | Lobby → full match → chat → event log → functional UI → engine tests |
 | Q20 | Deploy target | **Local + on-demand tunnel for remote play** | `scripts/play.sh`: free cloudflared quick tunnel (https URL per session, no account) over the local server — matches "open it when a friend wants to play". Always-on hosting (Vercel/Render/Bonto/Fly) deferred: Vercel WS beta caps at 300s & pins connections to one instance; Render/Bonto free tiers sleep on idle; Fly has no free tier |
 | Q21 | Card art | **User-provided PNGs** (rank-keyed in `client/public/cards`) | Replaces the game-icons plan; source/license TBD |
+| Q22 | Room discoverability | **Open rooms are discoverable** | Home lists every open room (lobby, free seat) live over the WS; codes stay the join handle — ADR-0008 |
+| Q23 | Entry + waiting-room UX | **Two-card Home, shareable Lobby** | Home: Start/Join cards + one shared persisted name; Lobby: card-back seats, copy-code + invite link; hostless stays |
 
 ## Stack
 

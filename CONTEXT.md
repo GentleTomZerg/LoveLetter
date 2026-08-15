@@ -34,6 +34,14 @@ _Avoid_: point, heart, win
 **Grace**:
 The 60-second window after a socket drop during which a player's seat is held. If their turn comes and they're still gone, they're folded out of the round; the seat is kept for the next round.
 
+**Room**:
+A table on the server where a match happens, keyed by a 4-letter code. A room holds 2–4 seats and the match state, and lives from creation until it closes; players join it by its code. The lobby is a room's phase, not a separate place.
+_Avoid_: session
+
+**Open room**:
+A room in its lobby phase with at least one free seat — the unit the room directory lists, and the only kind of room a player can join. A room leaves the directory the moment it fills (auto-start) or the match begins.
+_Avoid_: available table, waiting room
+
 **Seat**:
 A player's place at the table, carrying their public state — tokens, discards, hand count, and status (protected, out, reconnecting). Every player has exactly one; the viewer's own seat is their play area at the bottom of the stage, opponents' seats ring the table.
 _Avoid_: dashboard (a seat is one concept whether it is the viewer's own or an opponent's)
