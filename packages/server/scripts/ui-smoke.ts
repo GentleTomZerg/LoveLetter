@@ -383,6 +383,95 @@ async function runEntryAndWaitingPass(base: string, debugPort: number): Promise<
   console.log('  two-card Home, invite prefill, lobby share row, card-back seats');
 }
 
+/**
+ * Ticket 40 — the room directory, end to end: a room Alice opens appears on
+ * every Home (push for a tab already browsing, request-on-mount for a late
+ * visitor); rows are disabled until a name is typed; clicking a row joins
+ * with the shared name; the final seat auto-starts and that room leaves the
+ * browsing tab's list. Rows are matched by their unique code — earlier
+ * scenarios may have left other open rooms on the shared server.
+ */
+async function runRoomDirectory(base: string, debugPort: number): Promise<void> {
+  const [tabA, tabB, tabC] = await openTabs(debugPort, 3);
+  for (const t of [tabA, tabB, tabC]) {
+    await t.setViewport(1280, 800);
+    await t.navigate(base);
+    await waitFor(t, `document.querySelector('.screen.home') !== null`, 10000, 'Home');
+  }
+  // Earlier scenarios persist a name (ticket 41) and localStorage is shared
+  // per origin — clear it and reload so the disabled-before-name check is
+  // about a genuinely empty name, not a prefilled one.
+  await tabA.eval(`localStorage.removeItem('love-letter-name')`);
+  for (const t of [tabA, tabB, tabC]) {
+    await t.reload();
+    await waitFor(t, `document.querySelector('.screen.home') !== null`, 10000, 'Home (clean slate)');
+  }
+
+  // Alice starts a 3-player table.
+  await setInput(tabA, '.home input[placeholder="e.g. Alice"]', 'Alice');
+  await setSelect(tabA, '.home select', '3');
+  await clickButton(tabA, '.home', 'Create room');
+  await waitFor(tabA, `document.querySelector('.screen.lobby') !== null`, 10000, 'Lobby on A');
+  const code = (await tabA.eval(
+    `/Room ([A-Z]{4})/.exec(document.querySelector('.screen.lobby h1').textContent)[1]`,
+  )) as string;
+  const rowOf = (c: string) =>
+    `[...document.querySelectorAll('.room-row')].find((r) => r.textContent.includes('${c}'))`;
+
+  // Tab B (already browsing) sees the row via the push; a fresh tab (D) via
+  // its request-on-mount.
+  await waitFor(tabB, `${rowOf(code)} !== undefined`, 5000, 'row appears on B (push)');
+  const [tabD] = await openTabs(debugPort, 1);
+  await tabD.setViewport(1280, 800);
+  await tabD.navigate(base);
+  await waitFor(tabD, `document.querySelector('.screen.home') !== null`, 10000, 'Home on D');
+  // Alice's create just persisted her name again — clear + reload so D's row
+  // is checked against a genuinely empty name.
+  await tabD.eval(`localStorage.removeItem('love-letter-name')`);
+  await tabD.reload();
+  await waitFor(tabD, `document.querySelector('.screen.home') !== null`, 10000, 'Home on D (clean slate)');
+  await waitFor(tabD, `${rowOf(code)} !== undefined`, 5000, 'row appears on D (request)');
+
+  for (const tab of [tabB, tabD]) {
+    assert.ok(
+      ((await tab.eval(`${rowOf(code)}.textContent`)) as string).includes('Alice'),
+      'row shows the host',
+    );
+    assert.equal(
+      await tab.eval(`${rowOf(code)}.querySelector('.room-count').textContent`),
+      '1/3',
+      'row shows seats',
+    );
+    assert.equal(await tab.eval(`${rowOf(code)}.disabled`), true, 'row disabled without a name');
+  }
+
+  // Bob types a name and joins by clicking the row.
+  await setInput(tabB, '.home input[placeholder="e.g. Alice"]', 'Bob');
+  await waitFor(tabB, `${rowOf(code)}?.disabled === false`, 5000, 'row enabled after a name');
+  await tabB.eval(`${rowOf(code)}.click()`);
+  await waitFor(tabB, `document.querySelector('.screen.lobby') !== null`, 10000, 'Lobby on B');
+
+  // The push keeps the browsing tab live: D sees 2/3 without a reload.
+  await waitFor(
+    tabD,
+    `${rowOf(code)}?.querySelector('.room-count')?.textContent === '2/3'`,
+    5000,
+    'D sees 2/3 via push',
+  );
+
+  // Carol joins through the row → 3/3 → auto-start → that room leaves the
+  // directory on every browsing tab.
+  await setInput(tabC, '.home input[placeholder="e.g. Alice"]', 'Carol');
+  await waitFor(tabC, `${rowOf(code)}?.disabled === false`, 5000, 'row enabled on C');
+  await tabC.eval(`${rowOf(code)}.click()`);
+  for (const t of [tabA, tabB, tabC]) {
+    await waitFor(t, `document.querySelector('.screen.game') !== null`, 10000, 'Game on all seated tabs');
+  }
+  await waitFor(tabD, `${rowOf(code)} === undefined`, 5000, 'the auto-started room leaves D\'s list');
+
+  console.log('  directory: request, push, click-to-join, auto-start removal');
+}
+
 async function runRenderChecks(base: string, debugPort: number): Promise<void> {
   const [tabA, tabB] = await openTabs(debugPort, 2);
   await openRoom(base, [tabA, tabB], 2, ['Alice', 'Bob']);
@@ -1957,6 +2046,8 @@ async function main(): Promise<void> {
     await runLocaleCheck(base, debugPort);
     console.log('[ui-smoke] two-card entry + shareable waiting room (ticket 41)…');
     await runEntryAndWaitingPass(base, debugPort);
+    console.log('[ui-smoke] room directory (ticket 40)…');
+    await runRoomDirectory(base, debugPort);
     console.log('[ui-smoke] render checks (Home → Lobby → Game, discards, chat)…');
     await runRenderChecks(base, debugPort);
     console.log('[ui-smoke] chat pill + modal dialog (ticket 20)…');

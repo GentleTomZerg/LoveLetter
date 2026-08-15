@@ -15,6 +15,20 @@ export interface ChatMessage {
   text: string;
 }
 
+/** One row of the room directory (ADR-0008): an open room — a room in its
+ *  lobby phase with at least one free seat. In-progress rooms never appear
+ *  (mid-match join is engine-illegal). The host is the first player seated,
+ *  display-only — the room is hostless (no powers). */
+export interface RoomSummary {
+  code: string;
+  /** The first player seated — display-only, no powers. */
+  host: string;
+  /** Seated players' names, in seat order. */
+  names: string[];
+  seated: number;
+  capacity: number;
+}
+
 /** Client → server. */
 export type ClientPacket =
   | { type: 'createRoom'; name: string; capacity: number }
@@ -32,7 +46,10 @@ export type ClientPacket =
    *  client applied, −1 if none). The client never names itself on a fresh
    *  create/join — only on resume. */
   | { type: 'resume'; playerId: string; lastEventId: number }
-  | { type: 'chat'; text: string };
+  | { type: 'chat'; text: string }
+  /** Ask for the room directory (ticket 40) — answered with a `roomList`
+   *  snapshot; the server also pushes fresh snapshots to browsing sockets. */
+  | { type: 'roomList' };
 
 /**
  * Server → client. On join the server sends `hello` then a `snapshot` (the
@@ -54,6 +71,9 @@ export type ServerPacket =
   | { type: 'chat'; message: ChatMessage }
   /** Recent chat history, sent on resume so a reconnecting player keeps it. */
   | { type: 'chatLog'; messages: ChatMessage[] }
+  /** The room directory (ticket 40): open rooms, newest first. Sent on
+   *  request and pushed to browsing sockets whenever it changes. */
+  | { type: 'roomList'; rooms: RoomSummary[] }
   | { type: 'playerGone'; playerId: string; name: string }
   | { type: 'playerBack'; playerId: string; name: string }
   /** Terminal teardown notice — a code plus params, translated client-side (ADR-0005). */

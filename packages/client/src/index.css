@@ -312,6 +312,59 @@ button:disabled {
   font-size: 0.95rem;
 }
 
+/* The directory rows (ticket 40) — each is a join button: names, code,
+   seats. Disabled until a name is typed, like the create/join buttons. */
+.room-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.room-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.room-row:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.room-row:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.room-names {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-code {
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.room-count {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
 /* The collapsed join-by-code path — a quiet pill under the directory. */
 .code-toggle {
   align-self: flex-start;

@@ -43,13 +43,12 @@ export function Home({ game }: { game: Game }) {
     game.sendCreateRoom(trimmed, Number(capacity));
   };
 
-  const join = () => {
+  const join = (code: string) => {
     const trimmed = name.trim();
-    const code = roomCode.trim().toUpperCase();
-    if (trimmed.length === 0) return;
-    if (code.length === 0) return;
+    const c = code.trim().toUpperCase();
+    if (trimmed.length === 0 || c.length === 0) return;
     game.clearError();
-    game.sendJoinRoom(trimmed, code);
+    game.sendJoinRoom(trimmed, c);
   };
 
   // A language is named in its own language, so the toggle labels don't translate.
@@ -113,7 +112,26 @@ export function Home({ game }: { game: Game }) {
 
         <div className="directory-slot">
           <p className="slot-header">{t('home.openTables')}</p>
-          <p className="muted slot-empty">{t('home.noOpenRooms')}</p>
+          {game.rooms.length === 0 ? (
+            <p className="muted slot-empty">{t('home.noOpenRooms')}</p>
+          ) : (
+            <ul className="room-list">
+              {game.rooms.map((room) => (
+                <li key={room.code}>
+                  <button
+                    type="button"
+                    className="room-row"
+                    onClick={() => join(room.code)}
+                    disabled={name.trim().length === 0}
+                  >
+                    <span className="room-names">{room.names.join(' · ')}</span>
+                    <span className="room-code">{room.code}</span>
+                    <span className="room-count">{room.seated}/{room.capacity}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <button type="button" className="code-toggle" onClick={() => setShowCode((s) => !s)}>
@@ -133,7 +151,7 @@ export function Home({ game }: { game: Game }) {
               spellCheck={false}
               autoComplete="off"
             />
-            <button className="btn-primary" onClick={join} disabled={name.trim().length === 0 || roomCode.trim().length === 0}>
+            <button className="btn-primary" onClick={() => join(roomCode)} disabled={name.trim().length === 0 || roomCode.trim().length === 0}>
               {t('home.joinRoom')}
             </button>
           </div>

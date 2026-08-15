@@ -18,4 +18,4 @@ export {
   type LogKind,
   type LogParams,
 } from './view.js';
-export type { ClientPacket, ServerPacket, ChatMessage, WireParams } from './protocol.js';
+export type { ClientPacket, ServerPacket, ChatMessage, RoomSummary, WireParams } from './protocol.js';

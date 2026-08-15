@@ -42,6 +42,7 @@ import {
   type Event,
   type GameState,
   type Intent,
+  type RoomSummary,
   type ServerPacket,
   type WireParams,
 } from '@love-letter/core';
@@ -80,6 +81,10 @@ interface ServerContext {
   /** playerId → roomCode, so `resume` can find a seat without the code. */
   playerRooms: Map<string, string>;
   graceMs: number;
+  /** Sockets with no room bound — the Home screens the room directory is
+   *  pushed to (ticket 40, ADR-0008). A socket leaves on create/join/resume
+   *  and on close. */
+  browsers: Set<WebSocket>;
 }
 
 export interface AppHandle {
@@ -104,6 +109,7 @@ export async function createApp(options: AppOptions = {}): Promise<AppHandle> {
     rooms: new Map(),
     playerRooms: new Map(),
     graceMs,
+    browsers: new Set(),
   };
 
   const httpServer = createServer((req, res) => {
@@ -127,6 +133,7 @@ export async function createApp(options: AppOptions = {}): Promise<AppHandle> {
 
   wss.on('connection', (socket) => {
     const conn: Connection = { room: null, playerId: null };
+    ctx.browsers.add(socket); // a fresh socket starts as a Home browser
 
     socket.on('message', (raw) => {
       let packet: ClientPacket;
@@ -140,6 +147,7 @@ export async function createApp(options: AppOptions = {}): Promise<AppHandle> {
     });
 
     socket.on('close', () => {
+      ctx.browsers.delete(socket); // a closed socket is never a browser
       if (conn.room === null || conn.playerId === null) return;
       const room = conn.room;
       const playerId = conn.playerId;
@@ -185,6 +193,7 @@ function handlePacket(ctx: ServerContext, conn: Connection, packet: ClientPacket
   switch (packet.type) {
     case 'createRoom': return handleCreateRoom(ctx, conn, packet, socket);
     case 'joinRoom': return handleJoinRoom(ctx, conn, packet, socket);
+    case 'roomList': return handleRoomList(ctx, conn, packet, socket);
     case 'playCard':
     case 'choice':
     case 'nextRound':
@@ -232,10 +241,12 @@ function handleCreateRoom(
   room.sockets.set(playerId, socket);
   conn.room = room;
   conn.playerId = playerId;
+  ctx.browsers.delete(socket); // seated now — no longer browsing
 
   sendJson(socket, { type: 'hello', playerId, roomCode: code });
   sendSnapshot(socket, room, playerId);
   // No pre-existing sockets, so the creation batch has no one to reach.
+  pushDirectory(ctx); // a new open room appears in the directory
 }
 
 function handleJoinRoom(
@@ -259,6 +270,7 @@ function handleJoinRoom(
   room.sockets.set(playerId, socket);
   conn.room = room;
   conn.playerId = playerId;
+  ctx.browsers.delete(socket); // seated now — no longer browsing
 
   sendJson(socket, { type: 'hello', playerId, roomCode: code });
   sendSnapshot(socket, room, playerId);
@@ -266,6 +278,7 @@ function handleJoinRoom(
   // the batch events go to the sockets that were already there.
   broadcast(room, result.events, { except: playerId });
   scheduleGraceCheck(ctx, room);
+  pushDirectory(ctx); // seats changed — or the final seat auto-started the room
 }
 
 function handleGameIntent(ctx: ServerContext, conn: Connection, packet: ClientPacket, socket: WebSocket): void {
@@ -330,8 +343,12 @@ function handleLeave(ctx: ServerContext, conn: Connection, _packet: Extract<Clie
   socket.close();
 
   if (room.state !== null && room.state.players.length === 0) {
-    deleteRoom(ctx, room.code); // the last player left the lobby
+    deleteRoom(ctx, room.code); // the last player left the lobby (pushes inside)
+  } else if (room.state !== null && room.state.phase === 'lobby') {
+    pushDirectory(ctx); // a lobby seat freed — a room still in the directory
   }
+  // A mid-round leave (3–4 seats) changes nothing the directory shows, so it
+  // does not push — mid-round events never touch the directory (ticket 40).
 }
 
 /**
@@ -366,6 +383,7 @@ function handleResume(ctx: ServerContext, conn: Connection, packet: Extract<Clie
   room.sockets.set(playerId, socket);
   conn.room = room;
   conn.playerId = playerId;
+  ctx.browsers.delete(socket); // resumed into a seat — no longer browsing
 
   // The seat is back: cancel the fold and the room's expiry. Only announce
   // the return if the seat was actually marked gone — a resume that merely
@@ -548,6 +566,7 @@ function deleteRoom(ctx: ServerContext, code: string): void {
     for (const p of room.state.players) ctx.playerRooms.delete(p.id);
   }
   ctx.rooms.delete(code);
+  pushDirectory(ctx); // a room left the directory (expiry, close, last-leave)
 }
 
 // ---------------------------------------------------------------------------
@@ -604,6 +623,44 @@ function sendJson(ws: WebSocket, packet: ServerPacket): void {
 
 function sendError(ws: WebSocket, code: string, params?: WireParams): void {
   sendJson(ws, params === undefined ? { type: 'error', code } : { type: 'error', code, params });
+}
+
+// ---------------------------------------------------------------------------
+// Room directory (ticket 40, ADR-0008)
+// ---------------------------------------------------------------------------
+
+/** The directory: every open room (lobby phase with a free seat), newest
+ *  first. In-progress rooms never appear — they cannot be joined. */
+function roomDirectory(ctx: ServerContext): RoomSummary[] {
+  const rooms: RoomSummary[] = [];
+  for (const room of ctx.rooms.values()) {
+    const s = room.state;
+    if (s === null || s.phase !== 'lobby' || s.players.length >= s.capacity) continue;
+    rooms.push({
+      code: room.code,
+      host: s.players[0]?.name ?? '',
+      names: s.players.map((p) => p.name),
+      seated: s.players.length,
+      capacity: s.capacity,
+    });
+  }
+  return rooms.reverse(); // Map order is insertion order — newest is last
+}
+
+/** Answer a `roomList` request. Served to any socket — the directory is
+ *  server-public (ADR-0008); the client only asks while browsing Home. */
+function handleRoomList(ctx: ServerContext, _conn: Connection, _packet: ClientPacket, socket: WebSocket): void {
+  sendJson(socket, { type: 'roomList', rooms: roomDirectory(ctx) });
+}
+
+/** Push the current directory to every browsing socket (Home screens). Called
+ *  only on the lobby-relevant transitions — create, join, leave, deletion,
+ *  and the auto-start the final join triggers — never on mid-round events. */
+function pushDirectory(ctx: ServerContext): void {
+  const rooms = roomDirectory(ctx);
+  for (const ws of ctx.browsers) {
+    if (ws.readyState === WebSocket.OPEN) sendJson(ws, { type: 'roomList', rooms });
+  }
 }
 
 // ---------------------------------------------------------------------------

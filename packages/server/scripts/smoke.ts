@@ -616,6 +616,94 @@ async function runNoShowVacate(port: number): Promise<void> {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Ticket 40 — the room directory: open rooms (lobby, free seat) listed
+ * newest-first, requested on demand and pushed to browsing sockets on the
+ * lobby-relevant transitions (create, join, auto-start). A seated socket
+ * stops being a browser; mid-round play never pushes.
+ */
+async function runRoomDirectory(port: number): Promise<void> {
+  const browser = await connect(port);
+  browser.send({ type: 'roomList' });
+  const empty = await browser.waitFor((p) => p.type === 'roomList');
+  assert.deepEqual(empty.rooms, [], 'a fresh server has no open rooms');
+
+  // Alice opens a 3-player table; the browser sees it via the create push.
+  const alice = await connect(port);
+  alice.send({ type: 'createRoom', name: 'Alice', capacity: 3 });
+  await alice.waitFor((p) => p.type === 'hello');
+  const roomCode = alice.packets.find((p) => p.type === 'hello')!.roomCode;
+  const push1 = await browser.waitFor((p) => p.type === 'roomList' && p.rooms.length === 1);
+  assert.deepEqual(
+    push1.rooms,
+    [{ code: roomCode, host: 'Alice', names: ['Alice'], seated: 1, capacity: 3 }],
+    'a new lobby appears in the directory',
+  );
+
+  // Bob joins: the push carries the updated seats.
+  const bob = await connect(port);
+  bob.send({ type: 'joinRoom', roomCode, name: 'Bob' });
+  await bob.waitFor((p) => p.type === 'hello');
+  await browser.waitFor((p) => p.type === 'roomList' && p.rooms[0]?.seated === 2);
+  const push2 = [...browser.packets].reverse().find((p) => p.type === 'roomList')!;
+  assert.deepEqual(push2.rooms[0]!.names, ['Alice', 'Bob'], 'the joiner appears in the row');
+
+  // A seated socket is no longer a browser: Alice must not receive pushes.
+  assert.ok(!alice.packets.some((p) => p.type === 'roomList'), 'seated sockets stop receiving the directory');
+
+  // Carol fills the last seat → auto-start → the room leaves the directory.
+  const beforeCarol = browser.packetCount;
+  const carol = await connect(port);
+  carol.send({ type: 'joinRoom', roomCode, name: 'Carol' });
+  await carol.waitFor((p) => p.type === 'hello');
+  await alice.waitFor((p) => p.type === 'event' && p.event.type === 'roundStarted', 3000);
+  await browser.waitForNew(beforeCarol); // the auto-start push
+  const afterCarol = [...browser.packets].reverse().find((p) => p.type === 'roomList')!;
+  assert.equal(afterCarol.rooms.length, 0, 'a full room auto-starts and leaves the directory');
+
+  // Newest first: two fresh lobbies — the younger is listed ahead of the older.
+  const dave = await connect(port);
+  dave.send({ type: 'createRoom', name: 'Dave', capacity: 2 });
+  await dave.waitFor((p) => p.type === 'hello');
+  const eve = await connect(port);
+  eve.send({ type: 'createRoom', name: 'Eve', capacity: 2 });
+  await eve.waitFor((p) => p.type === 'hello');
+  const eveCode = eve.packets.find((p) => p.type === 'hello')!.roomCode;
+  const list = await browser.waitFor((p) => p.type === 'roomList' && p.rooms.length === 2);
+  assert.equal(list.rooms[0]!.host, 'Eve', 'the newest room is listed first');
+
+  // A host leaving the lobby removes the room from the directory (leave push).
+  const beforeLeave = browser.packetCount;
+  dave.send({ type: 'leave' });
+  await browser.waitForNew(beforeLeave);
+  const afterLeave = [...browser.packets].reverse().find((p) => p.type === 'roomList')!;
+  assert.deepEqual(
+    afterLeave.rooms.map((r) => r.code),
+    [eveCode],
+    'the vacated room leaves the directory',
+  );
+
+  // Mid-round play never pushes: the browsing socket's only channel is the
+  // directory, so a legal move inside the running match must add nothing.
+  const beforeRound = browser.packetCount;
+  let moves = 0;
+  for (const c of [alice, bob, carol]) {
+    if (await playOneMove(c)) moves += 1;
+  }
+  await new Promise((r) => setTimeout(r, 120)); // let any stray push land
+  assert.ok(moves >= 1, 'the running match produced a move');
+  assert.equal(browser.packetCount, beforeRound, 'mid-round events never push the directory');
+
+  browser.close();
+  alice.close();
+  bob.close();
+  carol.close();
+  dave.close();
+  eve.close();
+}
+
+// ---------------------------------------------------------------------------
+
 async function main(): Promise<void> {
   const apps: Awaited<ReturnType<typeof createApp>>[] = [];
   try {
@@ -644,10 +732,16 @@ async function main(): Promise<void> {
     apps.push(noShowApp);
     await runNoShowVacate(noShowApp.port);
 
+    console.log('[smoke] room directory: request, pushes, auto-start removal…');
+    const dirApp = await createApp({ port: 0, staticRoot: null });
+    apps.push(dirApp);
+    await runRoomDirectory(dirApp.port);
+
     console.log(
       'SMOKE OK — full match, rematch, error paths, resume/replay (stale + fresh), '
       + 'grace/auto-fold with within-grace resume, duplicate-socket replacement, chat relay, room expiry, '
-      + 'leave (lobby + mid-round), drop visibility (playerGone/playerBack + away), no-show vacate, 2p teardown',
+      + 'leave (lobby + mid-round), drop visibility (playerGone/playerBack + away), no-show vacate, 2p teardown, '
+      + 'room directory (request, create/join pushes, auto-start removal, newest-first)',
     );
   } finally {
     for (const app of apps) await app.close();

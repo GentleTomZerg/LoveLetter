@@ -19,6 +19,7 @@ import type {
   ChatMessage,
   Choice,
   ClientPacket,
+  RoomSummary,
   ServerPacket,
   ViewState,
   WireParams,
@@ -49,6 +50,9 @@ export interface GameState {
   chat: ChatMessage[];
   /** Seats whose sockets are currently dropped — the away badges (issue 11). */
   away: string[];
+  /** The room directory (ticket 40): open rooms, newest first. Requested on
+   *  Home mount and kept live by the server's pushes while this tab browses. */
+  rooms: RoomSummary[];
   /** Room-layer status lines (disconnects/reconnects), shown with the log. */
   activity: ActivityLine[];
   activitySeq: number;
@@ -82,8 +86,10 @@ function reducer(state: GameState, action: Action): GameState {
       return { ...state, error: null };
     case 'left':
       // Intentional exit: identity cleared by the caller, view dropped, and a
-      // fresh socket opens (session++). Home renders while it connects.
-      return { ...initial, left: true, status: 'open', session: state.session + 1 };
+      // fresh socket opens (session++). Home renders while it connects — the
+      // 'connecting' status is what re-triggers the directory request (ticket
+      // 40) once the new socket is live.
+      return { ...initial, left: true, status: 'connecting', session: state.session + 1 };
     case 'reset':
       // Back to Home (e.g. after a roomClosed): fresh state, fresh socket.
       return { ...initial, session: state.session + 1 };
@@ -121,6 +127,8 @@ function reducer(state: GameState, action: Action): GameState {
           return { ...state, chat: [...state.chat, p.message] };
         case 'chatLog':
           return { ...state, chat: [...p.messages] };
+        case 'roomList':
+          return { ...state, rooms: p.rooms };
         case 'playerGone': {
           const arrival = state.arrivalSeq + 1;
           const line: ActivityLine = { id: state.activitySeq, kind: 'info', params: { what: 'playerGone', name: p.name }, arrival };
@@ -161,6 +169,7 @@ const initial: GameState = {
   lastEventId: -1,
   chat: [],
   away: [],
+  rooms: [],
   activity: [],
   activitySeq: 0,
   arrivalSeq: 0,
@@ -244,6 +253,16 @@ export function useGame() {
   const sendChat = useCallback((text: string) => {
     send({ type: 'chat', text });
   }, [send]);
+  /** Ask the server for the room directory (ticket 40). */
+  const sendRoomList = useCallback(() => {
+    send({ type: 'roomList' });
+  }, [send]);
+  // A browsing (Home) tab asks for the directory once its socket is live
+  // (ticket 40): on a fresh load, after a leave, or after the room died. The
+  // server keeps the list fresh with pushes while the socket stays a browser.
+  useEffect(() => {
+    if (state.status === 'open' && state.view === null) sendRoomList();
+  }, [state.status, state.view, state.session, sendRoomList]);
   /** Leave for good (issue 11): tell the server, forget the identity, and
    *  open a fresh socket so Home works without a page reload. Fire-and-forget:
    *  leaving is always legal, so there is nothing to wait for. */
@@ -265,6 +284,7 @@ export function useGame() {
     sendNextRound,
     sendRematch,
     sendChat,
+    sendRoomList,
     sendLeave,
     goHome,
     clearError,
