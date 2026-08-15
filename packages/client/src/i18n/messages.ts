@@ -21,6 +21,10 @@ export const en = {
   'app.connectionLost': 'Connection lost — refresh to resume your seat. Your room is held for a minute after the drop.',
   'app.backHome': 'Back to Home',
 
+  // --- Theme (the redesign's dual themes: Parchment light / Night court dark) ---
+  'theme.light': 'Switch to light theme',
+  'theme.dark': 'Switch to dark theme',
+
   // --- Home ---
   'home.tagline': 'A game of risk, deduction, and luck for 2–4 players.',
   'home.yourName': 'Your name',
@@ -248,6 +252,10 @@ export const zh: Record<MessageKey, string> = {
   'app.connecting': '连接中…',
   'app.connectionLost': '连接已断开——刷新页面以恢复你的座位。掉线后房间会保留一分钟。',
   'app.backHome': '返回首页',
+
+  // --- Theme (浅色「羊皮纸」/ 深色「夜间宫廷」) ---
+  'theme.light': '切换到浅色主题',
+  'theme.dark': '切换到深色主题',
 
   // --- Home ---
   'home.tagline': '适合 2–4 人的风险、推理与运气游戏。',

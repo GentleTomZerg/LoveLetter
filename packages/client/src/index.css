@@ -1,19 +1,67 @@
-/* Love Letter Online — functional-clean styling. No decorative animations,
-   just readable; card-scene motion is functional and respects
-   prefers-reduced-motion (ADR-0007). */
+/* Love Letter Online — the "Sealed Love Letter" reskin (see
+   .scratch/love-letter-visual-redesign/spec.md). Two themes share one token
+   system: light "Parchment" (ivory surfaces, warm ink, crimson wax, antique
+   gold) and dark "Night court" (midnight indigo, parchment text, candlelight
+   gold). Colors derive from the card art — ivory-parchment faces and the
+   deep-crimson logo. Gold is the action color (turn / playable / choice /
+   selection); crimson is the brand and the wax; ice is Handmaid protection;
+   rose is out / reconnecting. All state signals keep non-color affordances
+   (text badges, rings, strikethrough, opacity). Card-scene motion stays
+   functional and respects prefers-reduced-motion (ADR-0007). */
 
 :root {
-  --ink: #2b2b33;
-  --muted: #8a8a94;
-  --line: #e2e2e8;
-  --panel: #ffffff;
-  --accent: #b3402e;
-  --accent-soft: #f6e3df;
-  --ok: #2e7d32;
-  --ok-soft: #e4f2e5;
-  --warn: #b3402e;
-  --warn-soft: #fbe9e7;
-  --bg: #f6f4f0;
+  --font-display: 'Fraunces', 'Iowan Old Style', 'Palatino Linotype', Georgia,
+    'Songti SC', 'Noto Serif SC', serif;
+  --font-body: 'Karla', system-ui, -apple-system, 'Segoe UI', Roboto,
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* --- Light — "Parchment" --- */
+  --bg: #f1eadc;
+  --surface: #fcf8ef;
+  --surface-2: #eae1cc;
+  --ink: #3a2f24;
+  --ink-soft: #6d5f4b;
+  --line: #dcd1b9;
+  --crimson: #a3311f;
+  --crimson-soft: #f7e6de;
+  /* --gold = the accent (text, borders, rings); --gold-fill = filled
+     surfaces (buttons, badges); --gold-ink = dark text on fills. Two roles
+     because one amber cannot clear 4.5:1 for both ink-on-fill and
+     text-on-surface. */
+  --gold: #85600f;
+  --gold-fill: #a97f1d;
+  --gold-ink: #221a06;
+  --gold-soft: #f3e9cd;
+  --ice: #46689f;
+  --ice-soft: #e6ecf6;
+  --rose: #9c453b;
+  --rose-soft: #f7e9e4;
+  --table-glow: rgba(143, 106, 21, 0.1);
+  --shadow: 0 2px 8px rgba(58, 47, 36, 0.12);
+  --shadow-lg: 0 8px 20px rgba(58, 47, 36, 0.18);
+}
+
+[data-theme='dark'] {
+  /* --- Dark — "Night court" --- */
+  --bg: #171820;
+  --surface: #22232f;
+  --surface-2: #1a1b24;
+  --ink: #ede4d0;
+  --ink-soft: #a49a83;
+  --line: #343650;
+  --crimson: #e0745c;
+  --crimson-soft: #3b2621;
+  --gold: #dfb76b;
+  --gold-fill: #dfb76b;
+  --gold-ink: #221a06;
+  --gold-soft: #3c3423;
+  --ice: #96b1e2;
+  --ice-soft: #232c42;
+  --rose: #e08a96;
+  --rose-soft: #3a2429;
+  --table-glow: rgba(223, 183, 107, 0.07);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 20px rgba(0, 0, 0, 0.45);
 }
 
 * {
@@ -22,9 +70,29 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
   background: var(--bg);
   color: var(--ink);
+}
+
+/* Quality floor: visible keyboard focus, in both themes (the redesign spec). */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* A visually-hidden-but-kept text node (the numeric ♥ n/target inside the
+   wax-seal hearts — the accessible/dense form and the ui-smoke contract). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .screen {
@@ -38,30 +106,38 @@ body {
 
 h1 {
   margin: 0;
-  font-size: 2rem;
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 h2 {
   margin: 0;
+  font-family: var(--font-display);
 }
 
 .tagline {
-  color: var(--muted);
+  color: var(--ink-soft);
   margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.05rem;
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 .panel {
-  background: var(--panel);
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 1rem 1.25rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  box-shadow: var(--shadow);
 }
 
 label {
@@ -69,7 +145,7 @@ label {
   flex-direction: column;
   gap: 0.35rem;
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 input,
@@ -77,9 +153,20 @@ select {
   font: inherit;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
+  border-radius: 8px;
+  background: var(--surface);
   color: var(--ink);
+}
+
+input::placeholder {
+  color: var(--ink-soft);
+  opacity: 0.85;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--gold);
+  outline: none;
 }
 
 button {
@@ -87,20 +174,36 @@ button {
   font-weight: 600;
   padding: 0.5rem 1rem;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
+  border-radius: 8px;
+  background: var(--surface);
   color: var(--ink);
   cursor: pointer;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--gold);
+  color: var(--gold);
 }
 
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Primary actions — a gold fill with dark "gold ink" text (the action
+   color pressed into a coin-like button; the fill/ink pair clears 4.5:1 in
+   both themes). */
+.btn-primary {
+  background: var(--gold-fill);
+  border-color: var(--gold-fill);
+  color: var(--gold-ink);
+  font-weight: 700;
+}
+
+.btn-primary:hover:not(:disabled) {
+  border-color: var(--gold-fill);
+  color: var(--gold-ink);
+  filter: brightness(1.06);
 }
 
 .row {
@@ -113,7 +216,7 @@ button:disabled {
 
 .divider {
   text-align: center;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 0.85rem;
   margin: 0.25rem 0;
 }
@@ -133,9 +236,9 @@ button:disabled {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: var(--warn-soft);
-  color: var(--warn);
-  border-bottom: 1px solid #eec3bd;
+  background: var(--crimson-soft);
+  color: var(--crimson);
+  border-bottom: 1px solid var(--line);
   padding: 0.6rem 1rem;
   text-align: center;
   cursor: pointer;
@@ -168,6 +271,18 @@ button:disabled {
 .logo {
   width: min(22rem, 80vw);
   display: block;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+/* The locale + theme switches share one row on Home (the theme toggle is
+   outside the create/join panel, so the smoke's first-panel-button assertion
+   is untouched). */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
 }
 
 /* --- Language toggle (ticket 15, ADR-0004) --- */
@@ -178,7 +293,7 @@ button:disabled {
   padding: 0.25rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--panel);
+  background: var(--surface);
 }
 
 .locale-toggle button {
@@ -187,15 +302,38 @@ button:disabled {
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-weight: 700;
 }
 
 .locale-toggle button.active {
-  background: var(--ink);
-  color: #fff;
+  background: var(--gold-fill);
+  color: var(--gold-ink);
 }
 
+/* The theme toggle — a compact circular switch showing the theme it will
+   switch TO (☾ in light, ☀ in dark), labeled in the viewer's locale. */
+.theme-toggle {
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
 
 .seats {
   list-style: none;
@@ -208,9 +346,9 @@ button:disabled {
 
 .seats .seat {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 1rem;
-  background: var(--panel);
+  background: var(--surface);
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -256,8 +394,8 @@ button:disabled {
   gap: 0.75rem;
   padding: 0.5rem 0.9rem;
   border-bottom: 1px solid var(--line);
-  background: var(--panel);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: var(--surface);
+  box-shadow: var(--shadow);
   z-index: 36;
 }
 
@@ -265,14 +403,15 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 0.85rem;
   font-weight: 600;
   white-space: nowrap;
 }
 
-/* --- The middle band: the tabletop ring (the abilities reference rides at
-   the bottom of the band until ticket 34's manual replaces it) --- */
+/* --- The middle band: the tabletop ring. The band carries the "candle
+   pool" — a barely-there radial glow behind the deck, so the center table
+   reads as the lit middle of the table in both themes. --- */
 .stage-band {
   flex: 1 1 0;
   min-height: 0;
@@ -281,6 +420,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   padding: 0.35rem;
+  background: radial-gradient(ellipse 90% 70% at 50% 42%, var(--table-glow), transparent 72%);
 }
 
 /* The tabletop: opponents across the top around a center table. The viewer
@@ -323,7 +463,7 @@ button:disabled {
 .center-table { grid-area: table; }
 
 /* One compact seat tile per opponent (issue 14 content, re-laid-out for the
-   top row): a header line (name / hearts / badges) over the cards row.
+   top row): a header line (name / hearts tokens / badges) over the cards row.
    Ticket 35: the viewer's own seat is the dock, so the ring tiles grew to
    ~20rem; ticket 36: the header shares one line so tiles stay short. */
 .tabletop .seat {
@@ -333,11 +473,12 @@ button:disabled {
   gap: 0.2rem;
   padding: 0.35rem 0.55rem;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
+  border-radius: 12px;
+  background: var(--surface);
   font-size: 0.9rem;
   text-align: center;
   width: min(100%, 20rem);
+  box-shadow: var(--shadow);
 }
 
 /* Ticket 36: the header — name, hearts, and badges on one line, wrapping
@@ -351,24 +492,24 @@ button:disabled {
   max-width: 100%;
 }
 /* The active player's tile is highlighted AND carries a "turn" pill — the
-   signal never relies on color alone (issue 14). */
+   signal never relies on color alone (issue 14). Gold = candlelight. */
 .tabletop .seat.turn {
-  border-color: var(--ok);
-  box-shadow: 0 0 0 2px var(--ok-soft);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold-soft), var(--shadow);
 }
 
 /* Ticket 35: tap-the-seat — while the viewer holds a pending choice, the
    legal target seats light up (a tap resolves it); the Guard's chosen
    target fills in. */
 .tabletop .seat.chooseable {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold-soft), var(--shadow);
   cursor: pointer;
 }
 
 .tabletop .seat.chosen {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--gold);
+  background: var(--gold-soft);
 }
 
 .tabletop .seat.out {
@@ -384,18 +525,68 @@ button:disabled {
 }
 
 .tabletop .seat.out .name {
-  color: var(--muted);
+  color: var(--ink-soft);
   text-decoration: line-through;
 }
 
-.tabletop .tokens {
+/* The wax-seal hearts — the tokens of affection as a fill row. */
+.tokens {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
+.hearts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.14rem;
+}
+
+.seal {
+  width: 0.85rem;
+  height: 0.85rem;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.seal svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Won = crimson wax with a gold rim and a soft seat shadow; empty = a faint
+   pressed outline. */
+.seal-filled svg {
+  fill: var(--crimson);
+  stroke: var(--gold);
+  stroke-width: 1.4;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
+}
+
+.seal-empty svg {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.3;
+}
+
+.dock-seat .seal {
+  width: 1rem;
+  height: 1rem;
+}
+
+.token-num {
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
 .turn-badge {
-  background: var(--ok-soft);
-  color: var(--ok);
+  background: var(--gold-fill);
+  color: var(--gold-ink);
   border-radius: 999px;
   padding: 0.1rem 0.5rem;
   font-size: 0.75rem;
@@ -415,9 +606,7 @@ button:disabled {
 }
 
 /* Ring piles wrap — every card carries the same overlap, so a wrapped row's
-   first card starts aligned (the old :first-child-only margin pulled it left
-   of the row start, breaking the pile look on phones — ticket 36); the left
-   padding gives the first card's negative margin room. */
+   first card starts aligned (ticket 36). */
 .tabletop .seat .pile {
   display: flex;
   flex-wrap: wrap;
@@ -428,7 +617,7 @@ button:disabled {
 
 /* Overlap + drop shadow so a multi-card pile reads as a stack of cards.
    One rule for the ring tiles and the viewer's dock — same thumb size, so
-   the two never drift (Q3(a): shrinking the thumbs was rejected). */
+   the two never drift. */
 .seat .pile img {
   width: 2.2rem;
   border-radius: 4px;
@@ -473,8 +662,9 @@ button:disabled {
   font-weight: 700;
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
-  background: var(--line);
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0.05rem 0.45rem;
 }
@@ -484,7 +674,8 @@ button:disabled {
 }
 
 .badge {
-  background: var(--line);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0.1rem 0.5rem;
   font-size: 0.75rem;
@@ -492,19 +683,22 @@ button:disabled {
 }
 
 .out-badge {
-  background: var(--warn-soft);
-  color: var(--warn);
+  background: var(--rose-soft);
+  border-color: transparent;
+  color: var(--rose);
 }
 
 .protected-badge {
-  background: #e3ecf8;
-  color: #2b5bb3;
+  background: var(--ice-soft);
+  border-color: transparent;
+  color: var(--ice);
 }
 
 /* A dropped seat, still within its grace window (issue 11). */
 .away-badge {
-  background: var(--warn-soft);
-  color: var(--warn);
+  background: var(--rose-soft);
+  border-color: transparent;
+  color: var(--rose);
   animation: away-pulse 1.6s ease-in-out infinite;
 }
 
@@ -517,7 +711,7 @@ button:disabled {
   padding: 0.15rem 0.7rem;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--ink-soft);
   background: transparent;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -526,8 +720,8 @@ button:disabled {
 }
 
 .leave-button:hover {
-  color: var(--warn);
-  border-color: var(--warn);
+  color: var(--rose);
+  border-color: var(--rose);
 }
 
 /* The Manual button in the merged top bar (ticket 33; the full three-part
@@ -536,7 +730,7 @@ button:disabled {
   padding: 0.3rem 0.8rem;
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--muted);
+  color: var(--ink-soft);
   background: transparent;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -545,10 +739,16 @@ button:disabled {
 }
 
 .manual-button:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--gold);
+  border-color: var(--gold);
 }
 
+/* The theme toggle inside the compact top bar. */
+.stage-top .theme-toggle {
+  width: 1.8rem;
+  height: 1.8rem;
+  font-size: 0.95rem;
+}
 
 /* The roomClosed terminal screen (issue 11). */
 .room-closed {
@@ -562,7 +762,11 @@ button:disabled {
 }
 
 .turn-banner {
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--gold);
   margin: 0.25rem 0 0;
 }
 
@@ -575,7 +779,7 @@ button:disabled {
   gap: 0.4rem;
   padding: 0.4rem 0.75rem 0.5rem;
   border-top: 1px solid var(--line);
-  background: var(--panel);
+  background: var(--surface);
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
 }
 
@@ -602,13 +806,15 @@ button:disabled {
 
 .choice-hint {
   margin: 0;
+  font-family: var(--font-display);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 1rem;
 }
 
 .choice-hint.muted {
+  font-family: var(--font-body);
   font-weight: 400;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 0.85rem;
 }
 
@@ -633,8 +839,8 @@ button:disabled {
 }
 
 /* --- Ticket 35: the dock IS the viewer's seat — a compact seat row (name /
-   tokens / badges / own pile / hand count) above the hand. It carries the
-   same `.seat` + `data-player-id` hooks as the ring tiles so the card
+   hearts tokens / badges / own pile / hand count) above the hand. It carries
+   the same `.seat` + `data-player-id` hooks as the ring tiles so the card
    scenes anchor to it, and the `.turn`/`.me` classes the smoke relies on. --- */
 .dock-seat {
   width: 100%;
@@ -644,18 +850,19 @@ button:disabled {
   gap: 0.35rem;
   padding: 0.45rem 0.6rem 0.5rem;
   border: 2px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
+  border-radius: 14px;
+  background: var(--surface);
 }
 
+/* You are the crimson seal on the table. */
 .dock-seat.me {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--crimson);
+  background: linear-gradient(var(--crimson-soft), var(--surface));
 }
 
 .dock-seat.turn {
-  border-color: var(--ok);
-  box-shadow: 0 0 0 2px var(--ok-soft);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold-soft);
 }
 
 .dock-seat.out {
@@ -667,7 +874,7 @@ button:disabled {
    border, so a lit dock gets a soft halo instead of a border change. */
 .dock-seat.chooseable {
   cursor: pointer;
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--gold-soft);
 }
 
 .dock-seat .seat-row {
@@ -684,20 +891,13 @@ button:disabled {
   font-weight: 700;
 }
 
-.dock-seat .seat-row .tokens {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
 .dock-seat .seat-cards {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-/* The dock's own discard pile — compact, like the opponents' piles (same
-   `.seat .pile img` rule above; the container lays them out inline and the
-   left padding compensates the uniform overlap). */
+/* The dock's own discard pile — compact, like the opponents' piles. */
 .dock-seat .pile {
   display: flex;
   align-items: center;
@@ -724,7 +924,8 @@ button:disabled {
   position: relative;
   overflow: hidden;
   display: block;
-  background: #fff;
+  background: var(--surface);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
 
 @media (max-height: 820px) {
@@ -740,13 +941,11 @@ button:disabled {
   display: block;
 }
 
-/* Ticket 35: the top-right rank badge is gone (the art carries the rank
-   numeral); the selected card raises a small Play chip in that corner — one
-   tap confirms, tapping elsewhere switches/deselects (ticket-25 regret). */
 .card-slot {
   position: relative;
 }
 
+/* The Play chip — the confirm action, pressed in gold. */
 .play-chip {
   position: absolute;
   top: -0.55rem;
@@ -756,16 +955,17 @@ button:disabled {
   font: inherit;
   font-size: 0.9rem;
   font-weight: 800;
-  border: 2px solid var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border: none;
+  background: var(--gold-fill);
+  color: var(--gold-ink);
   border-radius: 999px;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .play-chip:hover {
-  background: #f0d6d0;
+  filter: brightness(1.06);
+  color: var(--gold-ink);
 }
 
 .card.art .name-caption {
@@ -782,9 +982,10 @@ button:disabled {
   text-align: left;
 }
 
+/* Playable — gold, the candlelight action color. */
 .card.art.playable {
-  border-color: var(--ok);
-  box-shadow: 0 0 0 3px var(--ok-soft);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-soft), 0 2px 6px rgba(0, 0, 0, 0.18);
   cursor: pointer;
 }
 
@@ -792,12 +993,11 @@ button:disabled {
   transform: translateY(-3px);
 }
 
-/* Ticket 25: the selected hand card — an accent ring + a clear lift,
-   distinct from the green "playable" affordance. The other card stays
-   playable-looking, so switching the selection is always one click away. */
+/* Ticket 25: the selected hand card — a gold ring + a clear lift, distinct
+   from the playable affordance via the lift and the Play chip. */
 .card.art.selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft), 0 6px 14px rgba(0, 0, 0, 0.22);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-soft), 0 6px 14px rgba(0, 0, 0, 0.25);
   transform: translateY(-6px);
 }
 
@@ -810,15 +1010,15 @@ button:disabled {
 @keyframes card-drawn {
   0% {
     transform: translateY(0) scale(1);
-    box-shadow: 0 0 0 0 var(--accent-soft);
+    box-shadow: 0 0 0 0 var(--gold-soft);
   }
   35% {
     transform: translateY(-8px) scale(1.04);
-    box-shadow: 0 0 0 5px var(--accent-soft), 0 6px 14px rgba(0, 0, 0, 0.22);
+    box-shadow: 0 0 0 5px var(--gold-soft), 0 6px 14px rgba(0, 0, 0, 0.25);
   }
   100% {
     transform: translateY(0) scale(1);
-    box-shadow: 0 0 0 0 var(--accent-soft);
+    box-shadow: 0 0 0 0 var(--gold-soft);
   }
 }
 
@@ -833,7 +1033,7 @@ button:disabled {
 @keyframes deck-pulse {
   0% {
     transform: scale(1.15);
-    color: var(--accent);
+    color: var(--gold);
     font-weight: 800;
   }
   100% {
@@ -849,14 +1049,10 @@ button:disabled {
   }
 }
 
-/* Ticket 35: the full-width Play bar (ticket 25) is replaced by the on-card
-   chip; the hand dock now rides inside the viewer's seat. */
-
 /* --- The center table (ticket 33, Q8): the deck as a physical card-back
    stack with its count (the ticket-28 draw anchor), the face-down burned
    card, and the 2-player face-up removals as real card thumbs. Ticket 36:
-   one compact horizontal row — the text labels are gone (the tooltips and
-   the manual carry that info). --- */
+   one compact horizontal row. --- */
 .center-table {
   display: flex;
   align-items: center;
@@ -883,7 +1079,7 @@ button:disabled {
 
 /* The deck count on the stack — pulses on every draw (ticket 28). */
 .deck-total {
-  background: var(--panel);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0.05rem 0.45rem;
@@ -952,6 +1148,11 @@ button:disabled {
   font-weight: 700;
 }
 
+.match-over h2 {
+  font-size: 1.7rem;
+  color: var(--crimson);
+}
+
 /* The log and manual modals — full-screen like the chat dialog. The log
    modal stays in the DOM (the strip and the modal must agree) and hides
    itself when closed. */
@@ -987,29 +1188,21 @@ button:disabled {
   margin: 0;
 }
 
+/* Titles are set in the display face, sentence case — Fraunces, not caps. */
 .panel-title {
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 600;
   margin: 0;
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  color: var(--ink);
 }
 
 /* --- Card scenes (issue 23) ---
 
    A transient, non-interactive layer over the table: each play is one
-   coherent scene that ends with the outcome. The played card lifts from the
-   actor's seat (Use), targeting cards sweep toward the target then settle
-   into the actor's discard pile / non-targeting cards fly straight to the
-   pile (Travel & archive), and the outcome beat ends with a short verdict
-   caption (Effect, ~1.5s hold). The King plays to the pile first, then the
-   two hand cards cross as backs; the Baron's two public cards flash side by
-   side; the Guard's accusation is a tag at the target. Only cards move —
-   elimination dims the seat through the existing out-state transition. All
-   motion is gated behind prefers-reduced-motion: no-preference, honoring
-   the functional-clean ethos (ADR-0007): these are functional, not
-   decorative. */
+   coherent scene that ends with the outcome. All motion is gated behind
+   prefers-reduced-motion: no-preference (ADR-0007). */
 
 @media (prefers-reduced-motion: no-preference) {
   .scenes {
@@ -1062,11 +1255,11 @@ button:disabled {
   }
 
   /* Effect: a revealed card pops at its seat (Guard hit, the peeked card,
-     a standalone reveal). */
+     a standalone reveal) — gold ring, the reveal moment. */
   .scene-flash {
     width: 4rem;
     border-radius: 6px;
-    border: 2px solid var(--ok);
+    border: 2px solid var(--gold);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     animation: scene-flash var(--ms, 0.9s) ease-out forwards;
   }
@@ -1090,12 +1283,11 @@ button:disabled {
     }
   }
 
-  /* The Guard's accusation — a tag hovering over the target seat while the
-     card sweeps toward it. */
+  /* The Guard's accusation — a wax-red tag hovering over the target seat. */
   .scene-tag {
-    background: var(--panel);
-    border: 1px solid var(--accent);
-    color: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--crimson);
+    color: var(--crimson);
     border-radius: 999px;
     padding: 0.2rem 0.7rem;
     font-size: 0.8rem;
@@ -1123,17 +1315,19 @@ button:disabled {
     }
   }
 
-  /* The verdict caption — the outcome beat, held ~1.5s then drained. */
+  /* The verdict caption — the outcome beat, set in the display face, held
+     ~1.5s then drained. */
   .scene-caption {
     left: 50%;
     top: 58%;
-    background: var(--panel);
+    background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: 12px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
     padding: 0.6rem 1.1rem;
+    font-family: var(--font-display);
     font-weight: 700;
-    font-size: 0.95rem;
+    font-size: 1.05rem;
     transform: translate(-50%, -50%);
     animation: scene-caption var(--ms, 1.5s) ease-out forwards;
   }
@@ -1155,16 +1349,19 @@ button:disabled {
     }
   }
 
+  /* The round/match win banner — the announcement moment, in gold. */
   .scene-banner {
     left: 50%;
     top: 40%;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--gold);
+    border-radius: 12px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
     padding: 0.7rem 1.2rem;
+    font-family: var(--font-display);
     font-weight: 700;
-    font-size: 1rem;
+    font-size: 1.15rem;
+    color: var(--gold);
     transform: translate(-50%, -50%);
     animation: scene-banner var(--ms, 2.2s) ease-out forwards;
   }
@@ -1203,11 +1400,11 @@ button:disabled {
   align-items: center;
   gap: 0.6rem;
   max-width: min(24rem, calc(100vw - 2rem));
-  background: var(--panel);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0.55rem 0.9rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow);
   font: inherit;
   font-size: 0.85rem;
   color: var(--ink);
@@ -1222,8 +1419,8 @@ button:disabled {
 }
 
 .chat-badge {
-  background: var(--accent);
-  color: #fff;
+  background: var(--gold-fill);
+  color: var(--gold-ink);
   font-weight: 700;
   font-size: 0.75rem;
   min-width: 1.25rem;
@@ -1276,7 +1473,7 @@ button:disabled {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--muted);
+  color: var(--ink-soft);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1296,8 +1493,8 @@ button:disabled {
   flex: 1;
   overflow-y: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfaf8;
+  border-radius: 10px;
+  background: var(--surface-2);
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -1311,9 +1508,9 @@ button:disabled {
 }
 
 .chat-log li.mine {
-  background: var(--accent-soft);
-  border-top: 1px solid #f0d8d2;
-  border-bottom: 1px solid #f0d8d2;
+  background: var(--crimson-soft);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .chat-log .chat-name {
@@ -1403,11 +1600,11 @@ button:disabled {
 
 .manual-heading {
   margin: 0;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  color: var(--ink);
 }
 
 .manual-list {
@@ -1421,11 +1618,11 @@ button:disabled {
   line-height: 1.4;
 }
 
-/* The rulings are the manual's reason to exist — a light accent to set
+/* The rulings are the manual's reason to exist — a light wax accent to set
    them apart from the ordinary quick rules. */
 .manual-list.rulings li::before {
   content: '§';
-  color: var(--accent);
+  color: var(--crimson);
   font-weight: 800;
   margin-right: 0.35rem;
 }
@@ -1469,7 +1666,7 @@ button:disabled {
   padding: 0.35rem 0.7rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #fbfaf8;
+  background: var(--surface-2);
   font-size: 0.85rem;
   font-weight: 600;
   text-align: left;
@@ -1478,7 +1675,7 @@ button:disabled {
 }
 
 .log-strip:hover {
-  border-color: var(--accent);
+  border-color: var(--gold);
   color: var(--ink);
 }
 
@@ -1491,7 +1688,7 @@ button:disabled {
 }
 
 .log-strip-text.muted {
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 .log-thumb {
@@ -1510,7 +1707,7 @@ button:disabled {
   margin: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #fbfaf8;
+  background: var(--surface-2);
   overflow-y: auto;
   font-size: 0.85rem;
   /* flex-basis auto: content-sized when the history is short, filling the
@@ -1529,30 +1726,31 @@ button:disabled {
 }
 
 .log-round {
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 600;
 }
 
 .log-match {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--crimson);
 }
 
 .log-eliminate {
-  color: var(--warn);
+  color: var(--rose);
 }
 
 .log-leave {
-  color: var(--warn);
+  color: var(--rose);
   font-weight: 600;
 }
 
 .log-reveal {
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 .log-peek,
 .log-discard {
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 /* --- Ticket 33: phones lock to portrait. On a narrow landscape viewport

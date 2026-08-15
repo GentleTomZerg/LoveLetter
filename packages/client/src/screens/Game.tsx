@@ -6,6 +6,7 @@ import { useLocale, joinLocalizedList } from '../i18n';
 import { formatLogEntry, entryRank, mergeLog, type ActivityLine, type LogContext } from '../i18n/logFormat';
 import { endEntryOf } from '../scenes';
 import { PlayScenes, useStory } from './PlayScenes';
+import { ThemeToggle } from '../theme';
 
 /**
  * The game screen (ticket 33): a fixed `100dvh` stage that never scrolls —
@@ -142,6 +143,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
               {t('game.deck', { count: story.lagView.deckCount })}
             </span>
           </div>
+          <ThemeToggle />
           <button className="manual-button" onClick={() => setManualOpen(true)}>
             {t('game.manual')}
           </button>
@@ -201,7 +203,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
             <div className="seat-row">
               <span className="name" title={t('common.you')}>{t('common.you')}</span>
               <span className="tokens" title={t('table.tokensTitle')}>
-                ♥ {me?.tokens ?? 0} / {view.tokenTarget}
+                <TokenHearts tokens={me?.tokens ?? 0} target={view.tokenTarget} />
               </span>
               {isTurn && <span className="turn-badge">{t('table.turn')}</span>}
               {me?.protected && <span className="badge protected-badge">{t('table.protected')}</span>}
@@ -247,7 +249,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
                 <strong>{joinLocalizedList(view.roundWinnerIds.map((id) => playerName(id)), t)}</strong>{' '}
                 {t('game.roundWonTail')}
               </p>
-              <button onClick={game.sendNextRound}>{t('game.startNextRound')}</button>
+              <button className="btn-primary" onClick={game.sendNextRound}>{t('game.startNextRound')}</button>
             </div>
           </div>
         )}
@@ -257,7 +259,7 @@ export function Game({ view, selfId, game }: { view: ViewState; selfId: string; 
             <div className="panel match-over">
               <h2>{t('game.matchWon', { name: playerName(view.matchWinnerId) })}</h2>
               <p>{t('game.matchRematch', { count: view.tokenTarget })}</p>
-              <button onClick={game.sendRematch}>{t('game.rematch')}</button>
+              <button className="btn-primary" onClick={game.sendRematch}>{t('game.rematch')}</button>
             </div>
           </div>
         )}
@@ -338,6 +340,33 @@ function SeatCards({ discardPile, handCount }: { discardPile: Card[]; handCount:
         <span className={`hand-count ${handCount === 0 ? 'zero' : ''}`}>{handCount}</span>
       </span>
     </span>
+  );
+}
+
+/**
+ * The redesign's signature: the tokens of affection as a row of wax-seal
+ * hearts — won seals are crimson wax with a gold rim, empty slots are faint
+ * pressed outlines. The numeric ♥ n/target stays in the DOM (a visually-
+ * hidden ♥ plus a small count) — it is the accessible/dense form and part
+ * of the ui-smoke contract (`.tokens` textContent contains ♥ and n / target).
+ */
+function TokenHearts({ tokens, target }: { tokens: number; target: number }) {
+  return (
+    <>
+      <span className="hearts" aria-hidden="true">
+        {Array.from({ length: target }).map((_, i) => (
+          <span key={i} className={`seal ${i < tokens ? 'seal-filled' : 'seal-empty'}`}>
+            <svg viewBox="0 0 24 24" role="presentation">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>
+          </span>
+        ))}
+      </span>
+      <span className="token-num">
+        <span className="visually-hidden">♥ </span>
+        {tokens} / {target}
+      </span>
+    </>
   );
 }
 
@@ -456,7 +485,9 @@ function SeatTile({
         <span className="name" title={p.name}>
           {p.name}
         </span>
-        <span className="tokens" title={t('table.tokensTitle')}>♥ {p.tokens} / {view.tokenTarget}</span>
+        <span className="tokens" title={t('table.tokensTitle')}>
+          <TokenHearts tokens={p.tokens} target={view.tokenTarget} />
+        </span>
         {isTurn && <span className="turn-badge">{t('table.turn')}</span>}
         {p.protected && <span className="badge">{t('table.protected')}</span>}
         {p.out && <span className="badge out-badge">{t('table.out')}</span>}
@@ -818,7 +849,7 @@ function ChatDialog({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: str
                 spellCheck={false}
                 autoComplete="off"
               />
-              <button onClick={send} disabled={draft.trim().length === 0}>
+              <button className="btn-primary" onClick={send} disabled={draft.trim().length === 0}>
                 {t('chat.send')}
               </button>
             </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Game } from '../useGame';
 import { useLocale, type Locale } from '../i18n';
+import { ThemeToggle } from '../theme';
 
 export function Home({ game }: { game: Game }) {
   const { t, tCode, locale, setLocale } = useLocale();
@@ -32,9 +33,12 @@ export function Home({ game }: { game: Game }) {
       <img src="/cards/logo.png" alt="Love Letter" className="logo" />
       <p className="tagline">{t('home.tagline')}</p>
 
-      <div className="locale-toggle" role="group" aria-label="Language">
-        <button className={locale === 'en' ? 'active' : ''} onClick={pick('en')}>EN</button>
-        <button className={locale === 'zh' ? 'active' : ''} onClick={pick('zh')}>中文</button>
+      <div className="settings-row">
+        <div className="locale-toggle" role="group" aria-label="Language">
+          <button className={locale === 'en' ? 'active' : ''} onClick={pick('en')}>EN</button>
+          <button className={locale === 'zh' ? 'active' : ''} onClick={pick('zh')}>中文</button>
+        </div>
+        <ThemeToggle />
       </div>
 
       {game.error !== null && (
@@ -68,7 +72,7 @@ export function Home({ game }: { game: Game }) {
               <option value="4">4</option>
             </select>
           </label>
-          <button onClick={create} disabled={name.trim().length === 0}>
+          <button className="btn-primary" onClick={create} disabled={name.trim().length === 0}>
             {t('home.createRoom')}
           </button>
         </div>
@@ -87,7 +91,7 @@ export function Home({ game }: { game: Game }) {
             spellCheck={false}
             autoComplete="off"
           />
-          <button onClick={join} disabled={name.trim().length === 0 || roomCode.trim().length === 0}>
+          <button className="btn-primary" onClick={join} disabled={name.trim().length === 0 || roomCode.trim().length === 0}>
             {t('home.joinRoom')}
           </button>
         </div>
