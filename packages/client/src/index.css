@@ -1583,7 +1583,7 @@ button:disabled {
 .chat-pill {
   position: fixed;
   right: 1rem;
-  bottom: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
   z-index: 30;
   display: flex;
   align-items: center;
@@ -1631,6 +1631,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  overscroll-behavior: contain;
 }
 
 .chat-dialog {
@@ -1716,10 +1717,20 @@ button:disabled {
   gap: 0.5rem;
 }
 
-/* Near-fullscreen on phones (issue 20, Q14): the dialog fills the viewport. */
+/* On phones the chat becomes a bottom sheet (not a fullscreen takeover):
+   the game stays visible behind a lighter scrim. The sheet sizes itself to
+   the visual viewport --vv-height/--vv-top (set by ChatDialog while open),
+   so when the iOS keyboard opens the sheet shrinks to sit exactly above
+   the keys — the input is never covered. Rounded top corners + safe-area
+   padding clear the home indicator. The log/manual modals follow the
+   fullscreen precedent (below). */
 @media (max-width: 640px) {
   .chat-modal {
     padding: 0;
+    align-items: flex-end;
+    background: rgba(0, 0, 0, 0.25);
+    top: var(--vv-top, 0);
+    height: var(--vv-height, 100dvh);
   }
 
   /* The ring re-shapes for the narrow portrait: 3p drops the empty middle
@@ -1764,11 +1775,11 @@ button:disabled {
   }
 
   .chat-dialog {
-    width: 100vw;
-    height: 100vh;
-    height: 100dvh;
+    width: 100%;
+    height: min(60dvh, calc(var(--vv-height, 100dvh) - 0.75rem));
     max-height: none;
-    border-radius: 0;
+    border-radius: 1rem 1rem 0 0;
+    padding-bottom: calc(0.9rem + env(safe-area-inset-bottom));
   }
 
   /* The log and manual modals follow the chat precedent. */

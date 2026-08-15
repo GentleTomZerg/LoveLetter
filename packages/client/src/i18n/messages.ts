@@ -126,6 +126,7 @@ export const en = {
   'chat.close': 'Close',
   'chat.empty': 'No messages yet.',
   'chat.placeholder': 'Say something…',
+  'chat.inputLabel': 'Message',
   'chat.send': 'Send',
 
   // --- Log (ADR-0003: structured entries formatted here) ---
@@ -361,6 +362,7 @@ export const zh: Record<MessageKey, string> = {
   'chat.close': '关闭',
   'chat.empty': '暂无消息。',
   'chat.placeholder': '说点什么…',
+  'chat.inputLabel': '消息',
   'chat.send': '发送',
 
   // --- Log ---

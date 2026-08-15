@@ -738,6 +738,29 @@ function ChatDialog({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: str
   const [unread, setUnread] = useState(0);
   const listRef = useRef<HTMLUListElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const pillRef = useRef<HTMLButtonElement | null>(null);
+  // iOS never resizes the layout viewport for the software keyboard, so a
+  // fixed fullscreen dialog ends up half-covered by the keys. While the
+  // dialog is open, mirror the visual viewport (the keyboard-aware visible
+  // area) onto CSS vars; the phone sheet in index.css sizes itself to them,
+  // so it always sits exactly above the keyboard (and tracks the URL bar).
+  useEffect(() => {
+    if (!open) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const root = document.documentElement;
+    const update = () => {
+      root.style.setProperty('--vv-top', `${vv.offsetTop}px`);
+      root.style.setProperty('--vv-height', `${Math.round(vv.height)}px`);
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, [open]);
   // Others' messages the user has seen (dialog open, or up to the last
   // close); only arrivals beyond this count while the dialog is closed become
   // unread. Own messages never count — the relay echoes them back to this
@@ -798,6 +821,9 @@ function ChatDialog({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: str
   const closeDialog = () => {
     setOpen(false);
     seenRef.current = othersRef.current;
+    // Return focus to the pill — an aria-modal dialog should hand focus
+    // back to its trigger on close.
+    pillRef.current?.focus();
   };
 
   const newest = chat.length > 0 ? chat[chat.length - 1]! : null;
@@ -813,7 +839,7 @@ function ChatDialog({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: str
 
   return (
     <>
-      <button className="chat-pill" onClick={openDialog}>
+      <button className="chat-pill" onClick={openDialog} ref={pillRef}>
         <span className={`chat-preview ${newest === null ? 'muted' : ''}`}>{preview}</span>
         {unread > 0 && <span className="chat-badge">{unread}</span>}
       </button>
@@ -847,6 +873,7 @@ function ChatDialog({ chat, selfId, onSend }: { chat: ChatMessage[]; selfId: str
                   if (e.key === 'Enter') send();
                 }}
                 placeholder={t('chat.placeholder')}
+                aria-label={t('chat.inputLabel')}
                 maxLength={200}
                 autoCorrect="off"
                 autoCapitalize="sentences"
