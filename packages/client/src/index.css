@@ -423,11 +423,15 @@ button:disabled {
   background: radial-gradient(ellipse 90% 70% at 50% 42%, var(--table-glow), transparent 72%);
 }
 
-/* The tabletop: opponents across the top around a center table. The viewer
-   is always the dock (ticket 35) — 2p is one opponent across, 3p two
-   corners, 4p three across. `margin: auto` centers the grid when the band
-   has room and collapses so the band scrolls (without clipping the top)
-   when it doesn't. */
+/* The tabletop: opponents ring the center table. The viewer is always the
+   dock (ticket 35), so the ring holds only opponents — 2p is one wide seat
+   across the table, 3p two seats, 4p three. The layouts are count-shaped
+   (grid areas below), and every seat fills the cell it is given: 2p gets a
+   single full-width column, and on phones 3p drops the empty corner column
+   while 4p re-rings to 2+1 (two up top, the third below the center table)
+   so no seat is squeezed narrower than ~186px. `margin: auto` centers the
+   grid when the band has room and collapses so the band scrolls (without
+   clipping the top) when it doesn't. */
 .tabletop {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -439,18 +443,31 @@ button:disabled {
   margin: auto;
 }
 
+/* 2 players: one wide seat — the opponent sits across the table with room
+   for a long pile. 28rem keeps the tile from reading as a stretched bar on
+   big desktops; phones fill it entirely. */
 .tabletop.duel {
+  grid-template-columns: 1fr;
   grid-template-areas:
-    ". top ."
-    ". table .";
+    "top"
+    "table";
 }
 
+.tabletop.duel .seat {
+  width: min(100%, 28rem);
+}
+
+/* 3 players: two seats at the corners (desktop); phones drop the empty
+   middle column so each seat widens to ~half the ring (see the narrow
+   media query below). */
 .tabletop.three {
   grid-template-areas:
     "tl . tr"
     ". table .";
 }
 
+/* 4 players: three seats across (desktop); phones re-ring to 2+1 (see the
+   narrow media query below). */
 .tabletop.four {
   grid-template-areas:
     "tl top tr"
@@ -479,6 +496,9 @@ button:disabled {
   text-align: center;
   width: min(100%, 20rem);
   box-shadow: var(--shadow);
+  /* Size container: the pile/hand-backs rules below ask the seat how much
+     room it actually has, so a narrow seat degrades gracefully. */
+  container-type: inline-size;
 }
 
 /* Ticket 36: the header — name, hearts, and badges on one line, wrapping
@@ -605,25 +625,31 @@ button:disabled {
   max-width: 100%;
 }
 
-/* Ring piles wrap — every card carries the same overlap, so a wrapped row's
-   first card starts aligned (ticket 36). */
+/* Ring piles fit one line, always: `nowrap` so a long pile can never wrap
+   into clipped overlapping rows (the old `wrap` cut every wrapped card to a
+   ~2px sliver); the count classes (`.grow`/`.long` in the narrow media
+   query) shrink the thumbs instead. The `padding-left` matches the first
+   card's negative margin so a short pile starts exactly at the row edge. */
 .tabletop .seat .pile {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
   padding-left: 1.4rem;
+  max-width: 100%;
 }
 
 /* Overlap + drop shadow so a multi-card pile reads as a stack of cards.
    One rule for the ring tiles and the viewer's dock — same thumb size, so
-   the two never drift. */
+   the two never drift. `flex-shrink: 0` keeps the cards at their fan size
+   (the count classes do the shrinking, never the flex layout). */
 .seat .pile img {
   width: 2.2rem;
   border-radius: 4px;
   border: 1px solid var(--line);
   display: block;
   margin-left: -1.4rem;
+  flex-shrink: 0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
@@ -656,6 +682,15 @@ button:disabled {
 
 .hand-backs img:first-child {
   margin-left: 0;
+}
+
+/* On a very narrow seat (a tiny phone in a 4p game) the decorative card
+   backs give way to the count alone, so the pile keeps its whole line — the
+   pile is the deduction surface, the backs are not. */
+@container (max-width: 160px) {
+  .tabletop .seat .hand-backs {
+    display: none;
+  }
 }
 
 .hand-count {
@@ -1531,6 +1566,47 @@ button:disabled {
 @media (max-width: 640px) {
   .chat-modal {
     padding: 0;
+  }
+
+  /* The ring re-shapes for the narrow portrait: 3p drops the empty middle
+     column (seats widen from ~122px to ~half the ring), 4p re-rings to 2+1
+     — two opponents up top, the third below the center table — so every
+     seat gets ~186px instead of ~122px and its discard pile renders on one
+     line. The class names stay (`.duel`/`.three`/`.four` are part of the
+     ui-smoke contract); only the grids change. */
+  .tabletop.three {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "tl tr"
+      "table table";
+  }
+
+  .tabletop.four {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "tl tr"
+      "table table"
+      "top top";
+  }
+
+  /* Long piles shrink so the whole pile stays on one line (deduction needs
+     every card visible; wrapping clipped the rows). 2.2rem for short piles
+     keeps the cards readable; 6+ cards step down to 1.9rem, 8+ to 1.6rem.
+     The overlap steps with the thumb so the fan reads the same at any size. */
+  .tabletop .seat .pile.grow {
+    padding-left: 1.2rem;
+  }
+  .tabletop .seat .pile.grow img {
+    width: 1.9rem;
+    margin-left: -1.2rem;
+  }
+  .tabletop .seat .pile.long {
+    padding-left: 1rem;
+  }
+  .tabletop .seat .pile.long img {
+    width: 1.6rem;
+    margin-left: -1rem;
   }
 
   .chat-dialog {

@@ -317,15 +317,18 @@ function CardThumb({ rank, className }: { rank: Rank; className?: string }) {
  */
 /** The cards row of a seat — the face-up discard pile + hand count side by
  *  side. Shared by the ring tiles and the viewer's dock (ticket 35) so the
- *  two never drift. */
+ *  two never drift. Long piles grow `.grow`/`.long` (narrow screens shrink
+ *  the thumbs) so the whole pile stays on one line — a pile that wrapped
+ *  clipped its rows to slivers. */
 function SeatCards({ discardPile, handCount }: { discardPile: Card[]; handCount: number }) {
   const { t } = useLocale();
+  const shrink = discardPile.length >= 8 ? ' long' : discardPile.length >= 6 ? ' grow' : '';
   return (
     <span className="seat-cards">
       {discardPile.length === 0 ? (
         <span className="muted pile-empty">—</span>
       ) : (
-        <span className="pile" title={t('table.discards', { count: discardPile.length })}>
+        <span className={`pile${shrink}`} title={t('table.discards', { count: discardPile.length })}>
           {discardPile.map((c, i) => (
             <CardThumb key={i} rank={c.rank} />
           ))}
@@ -441,7 +444,8 @@ function TableRing({
 /** One layout per opponent count — the viewer is always the dock (ticket 35),
  *  so the ring holds only opponents: 1 across (2p duel), 2 corners (3p),
  *  three across (4p). The class names keep the game-size vocabulary the
- *  smoke asserts (.duel for 2p). */
+ *  smoke asserts (.duel for 2p); on narrow screens the CSS re-rings the
+ *  grids (3p to two columns, 4p to 2+1) without touching these names. */
 const RING_LAYOUTS: Record<number, { positions: string[]; className: string }> = {
   1: { positions: ['pos-top'], className: 'duel' },
   2: { positions: ['pos-tl', 'pos-tr'], className: 'three' },
