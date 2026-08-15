@@ -29,13 +29,19 @@ export const en = {
   'home.tagline': 'A game of risk, deduction, and luck for 2–4 players.',
   'home.yourName': 'Your name',
   'home.namePlaceholder': 'e.g. Alice',
+  // Ticket 41: two-card entry — the name is shared, the actions are split.
+  'home.startCard': 'Start a table',
+  'home.joinCard': 'Join a table',
+  'home.haveCode': 'I have a code?',
+  'home.hideCode': 'Hide code',
+  'home.openTables': 'Open tables',
+  'home.noOpenRooms': 'No open tables — start one!',
   'home.players': 'Players',
   'home.createRoom': 'Create room',
-  'home.or': 'or',
   'home.roomCode': 'Room code',
   'home.joinRoom': 'Join room',
 
-  // --- Lobby ---
+  // --- Lobby (ticket 41: a shareable waiting room) ---
   'lobby.room': 'Room {code}',
   'lobby.tagline': 'Share this code with your friends — the match starts automatically when all seats are full.',
   'lobby.you': 'you',
@@ -44,6 +50,9 @@ export const en = {
   'lobby.statusWaiting': '{seated}/{capacity} players seated — waiting for the rest…',
   'lobby.statusStarting': '{seated}/{capacity} players seated — starting!',
   'lobby.leaveGame': 'Leave game',
+  'lobby.copyCode': 'Copy code',
+  'lobby.copyInvite': 'Copy invite link',
+  'lobby.copied': 'Copied!',
 
   // --- Game header ---
   'game.room': 'Room {code}',
@@ -261,13 +270,19 @@ export const zh: Record<MessageKey, string> = {
   'home.tagline': '适合 2–4 人的风险、推理与运气游戏。',
   'home.yourName': '你的名字',
   'home.namePlaceholder': '例如：小明',
+  // Ticket 41: 双卡片入口——名字共享，操作分开。
+  'home.startCard': '创建牌桌',
+  'home.joinCard': '加入牌桌',
+  'home.haveCode': '我有房间代码？',
+  'home.hideCode': '收起代码',
+  'home.openTables': '开放牌桌',
+  'home.noOpenRooms': '暂无开放牌桌——创建一个吧！',
   'home.players': '玩家人数',
   'home.createRoom': '创建房间',
-  'home.or': '或',
   'home.roomCode': '房间代码',
   'home.joinRoom': '加入房间',
 
-  // --- Lobby ---
+  // --- Lobby (ticket 41: 可分享的等候室) ---
   'lobby.room': '房间 {code}',
   'lobby.tagline': '与好友分享此代码——座位满员后自动开始对局。',
   'lobby.you': '你',
@@ -276,6 +291,9 @@ export const zh: Record<MessageKey, string> = {
   'lobby.statusWaiting': '已就座 {seated}/{capacity} 人——等待其余玩家…',
   'lobby.statusStarting': '已就座 {seated}/{capacity} 人——开始！',
   'lobby.leaveGame': '离开游戏',
+  'lobby.copyCode': '复制代码',
+  'lobby.copyInvite': '复制邀请链接',
+  'lobby.copied': '已复制！',
 
   // --- Game header ---
   'game.room': '房间 {code}',

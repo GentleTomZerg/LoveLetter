@@ -47,6 +47,9 @@ async function main(): Promise<void> {
     }
 
     console.log('— Home, light —');
+    // Pin the emulated system to light: the script asserts a fresh visitor's
+    // default theme, which must not depend on the host OS's appearance.
+    await tabA.setColorScheme('light');
     await tabA.navigate(base);
     await waitFor(tabA, `document.querySelector('.screen.home') !== null`, 10000, 'Home');
     await sleep(500); // let the webfonts settle
@@ -101,6 +104,7 @@ async function main(): Promise<void> {
     const code = (await tabA.eval(
       `/Room ([A-Z]{4})/.exec(document.querySelector('.screen.lobby h1').textContent)[1]`,
     )) as string;
+    await clickButton(tabB, '.home', 'I have a code?'); // ticket 41: join-by-code is collapsed
     await setInput(tabB, '.code-input', code);
     await clickButton(tabB, '.home', 'Join room');
     await waitFor(tabA, `document.querySelector('.screen.game') !== null`, 10000, 'Game on A');
@@ -186,6 +190,7 @@ async function main(): Promise<void> {
     )) as string;
     for (const [t, name] of [[d, 'Dave'], [e, 'Eve']] as const) {
       await setInput(t, '.home input[placeholder="e.g. Alice"]', name);
+      await clickButton(t, '.home', 'I have a code?'); // ticket 41: join-by-code is collapsed
       await setInput(t, '.code-input', code4);
       await clickButton(t, '.home', 'Join room');
     }
@@ -194,6 +199,7 @@ async function main(): Promise<void> {
     await tabA.reload(); // leave the 2p game (a fresh visitor socket)
     await waitFor(tabA, `document.querySelector('.screen.home') !== null`, 10000, 'Home on A again');
     await setInput(tabA, '.home input[placeholder="e.g. Alice"]', 'Alice');
+    await clickButton(tabA, '.home', 'I have a code?'); // ticket 41: join-by-code is collapsed
     await setInput(tabA, '.code-input', code4);
     await clickButton(tabA, '.home', 'Join room');
     for (const t of [tabA, c, d, e]) {

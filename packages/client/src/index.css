@@ -214,13 +214,6 @@ button:disabled {
   flex-wrap: wrap;
 }
 
-.divider {
-  text-align: center;
-  color: var(--ink-soft);
-  font-size: 0.85rem;
-  margin: 0.25rem 0;
-}
-
 .code-input {
   flex: 1;
   /* Inputs refuse to shrink below their intrinsic width (widened by the
@@ -266,6 +259,101 @@ button:disabled {
   text-align: left;
   width: 100%;
   max-width: 26rem;
+}
+
+/* The shared identity field (ticket 41) sits above the two cards at the
+   same width, so the entry column reads as one form. */
+.home .name-field {
+  width: 100%;
+  max-width: 26rem;
+  text-align: left;
+}
+
+/* --- Two-card entry (ticket 41) --- */
+
+.home .card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* An invite link highlights the Join card in the action color for the whole
+   Home visit — the code field is prefilled and expanded beside it. */
+.join-card.invited {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-soft);
+}
+
+/* The directory slot: ticket 40 fills this with the live room list; until
+   then the dashed well holds the empty state. */
+.directory-slot {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.slot-header {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.slot-empty {
+  margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+/* The collapsed join-by-code path — a quiet pill under the directory. */
+.code-toggle {
+  align-self: flex-start;
+  padding: 0.15rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.code-toggle:hover {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+/* --- Lobby: a shareable waiting room (ticket 41) --- */
+
+.share-row {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.share-button {
+  padding: 0.25rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--gold-ink);
+  background: var(--gold-fill);
+  border: 1px solid var(--gold-fill);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.share-button:hover {
+  filter: brightness(1.06);
 }
 
 .logo {
@@ -357,6 +445,19 @@ button:disabled {
 .seats .seat.empty {
   background: transparent;
   border-style: dashed;
+  align-items: center;
+  text-align: center;
+}
+
+/* An empty seat is a card-back tile — the table reads as half-set. The
+   theme's own deck back (Parchment / Night court) is picked by the client
+   theme, not by CSS, because the two are distinct images. */
+.seat-back {
+  width: 3.4rem;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
 }
 
 .status {

@@ -188,6 +188,8 @@ async function openRoom(base: string, tabs: CdpSession[], capacity: number, name
   for (let i = 1; i < tabs.length; i++) {
     await waitFor(tabs[i]!, `document.querySelector('.screen.home') !== null`, 10000, `Home on tab ${i}`);
     await setInput(tabs[i]!, '.home input[placeholder="e.g. Alice"]', names[i]!);
+    // Ticket 41: join-by-code lives behind the collapsed "I have a code?" toggle.
+    await clickButton(tabs[i]!, '.home', 'I have a code?');
     await setInput(tabs[i]!, '.code-input', code);
     await clickButton(tabs[i]!, '.home', 'Join room');
   }
@@ -234,6 +236,8 @@ async function runNarrowViewport(base: string, debugPort: number): Promise<void>
     await tab.navigate(base);
     await waitFor(tab, `document.querySelector('.screen.home') !== null`, 10000, `Home at ${width}px`);
     await setInput(tab, '.home input[placeholder="e.g. Alice"]', 'Alice');
+    // Ticket 41: expand the join-by-code path so its button is in the check too.
+    await clickButton(tab, '.home', 'I have a code?');
     const buttons = (await tab.eval(`(() => {
       const vw = window.innerWidth;
       return [...document.querySelectorAll('.home button')].map((b) => {
@@ -282,6 +286,101 @@ async function runLocaleCheck(base: string, debugPort: number): Promise<void> {
   await clickButton(tab, '.locale-toggle', 'EN');
   await waitFor(tab, `document.querySelector('.home .panel button').textContent.trim() === 'Create room'`, 5000, 'Home (en again)');
   console.log('  locale toggle: en → 中文 → EN round-trips');
+}
+
+/**
+ * Ticket 41 — the two-card entry and the shareable waiting room:
+ *  - Home splits host vs guest into two cards under one shared name; the
+ *    Join card carries the directory slot's empty state and a collapsed
+ *    join-by-code path.
+ *  - `?room=CODE` prefills the code field and highlights the Join card —
+ *    but never seats you: an invite link alone must not auto-join.
+ *  - The Lobby's share row copies the code and the invite link (the copy
+ *    itself is stubbed — the seam is the UI flow, not Chrome's clipboard),
+ *    and empty seats render as theme-matched card-back tiles.
+ */
+async function runEntryAndWaitingPass(base: string, debugPort: number): Promise<void> {
+  const [tab] = await openTabs(debugPort, 1);
+  await tab.setViewport(1280, 800);
+  await tab.navigate(base);
+  await waitFor(tab, `document.querySelector('.screen.home') !== null`, 10000, 'Home');
+
+  // Two cards under one shared name field.
+  assert.ok(await tab.eval(`document.querySelectorAll('.home .panel.card').length === 2`), 'Home renders two cards');
+  assert.equal(
+    await tab.eval(`document.querySelector('.start-card h2').textContent`),
+    'Start a table',
+    'Start card title',
+  );
+  assert.equal(
+    await tab.eval(`document.querySelector('.join-card h2').textContent`),
+    'Join a table',
+    'Join card title',
+  );
+  // The directory slot ships its empty state in ticket 41; the code path
+  // starts collapsed.
+  assert.equal(
+    await tab.eval(`document.querySelector('.slot-empty').textContent.trim()`),
+    'No open tables — start one!',
+    'directory empty state',
+  );
+  assert.ok(await tab.eval(`document.querySelector('.code-input') === null`), 'code field collapsed by default');
+
+  // Invite link: prefill + highlight, never auto-join.
+  await tab.navigate(`${base}/?room=GHJK`);
+  await waitFor(tab, `document.querySelector('.screen.home') !== null`, 10000, 'Home via invite link');
+  await waitFor(tab, `document.querySelector('.join-card.invited') !== null`, 5000, 'Join card highlighted');
+  assert.equal(await tab.eval(`document.querySelector('.code-input').value`), 'GHJK', 'code prefilled from ?room=');
+  assert.ok(await tab.eval(`document.querySelector('.screen.lobby') === null`), 'invite link does not auto-join');
+
+  // A stale invite (room gone) fails honestly: join rejects and the existing
+  // error banner shows — the ticket's "never a silent dead-end" clause.
+  await setInput(tab, '.home input[placeholder="e.g. Alice"]', 'Alice');
+  await clickButton(tab, '.home', 'Join room');
+  await waitFor(tab, `document.querySelector('.error-banner') !== null`, 5000, 'stale link → error banner');
+  assert.ok(
+    ((await tab.eval(`document.querySelector('.error-banner').textContent`)) as string).includes('room not found'),
+    'room_not_found on a stale code',
+  );
+  await click(tab, '.error-banner'); // dismiss
+  await waitFor(tab, `document.querySelector('.error-banner') === null`, 5000, 'banner dismissed');
+
+  // Create a room via the Start card.
+  await setInput(tab, '.home input[placeholder="e.g. Alice"]', 'Alice');
+  await setSelect(tab, '.home select', '2');
+  await clickButton(tab, '.home', 'Create room');
+  await waitFor(tab, `document.querySelector('.screen.lobby') !== null`, 10000, 'Lobby');
+
+  // The share row: two buttons, and the copy flow flips the label.
+  assert.ok(await tab.eval(`document.querySelectorAll('.share-button').length === 2`), 'two share buttons');
+  await tab.eval(`document.execCommand = () => true`); // stub the legacy copy seam
+  await clickButton(tab, '.lobby', 'Copy code');
+  await waitFor(
+    tab,
+    `[...document.querySelectorAll('.share-button')].some((b) => b.textContent === 'Copied!')`,
+    5000,
+    'copy-code feedback',
+  );
+  await clickButton(tab, '.lobby', 'Copy invite link');
+  await waitFor(
+    tab,
+    `[...document.querySelectorAll('.share-button')].some((b) => b.textContent === 'Copied!')`,
+    5000,
+    'copy-invite feedback',
+  );
+
+  // Empty seats are card-back tiles; the seat hooks the rest of the suite
+  // relies on stay intact.
+  const backSrc = await tab.eval(`document.querySelector('.seat.empty .seat-back')?.getAttribute('src')`);
+  assert.ok(
+    backSrc === '/cards/back-light.png' || backSrc === '/cards/back-deep.png',
+    `card-back tile: ${backSrc}`,
+  );
+  assert.ok(await tab.eval(`document.querySelectorAll('.screen.lobby .seat').length === 2`), 'seat hooks intact');
+
+  // The shared name persisted through create.
+  assert.equal(await tab.eval(`localStorage.getItem('love-letter-name')`), 'Alice', 'name persisted');
+  console.log('  two-card Home, invite prefill, lobby share row, card-back seats');
 }
 
 async function runRenderChecks(base: string, debugPort: number): Promise<void> {
@@ -1856,6 +1955,8 @@ async function main(): Promise<void> {
     await runNarrowViewport(base, debugPort);
     console.log('[ui-smoke] locale toggle (ticket 17)…');
     await runLocaleCheck(base, debugPort);
+    console.log('[ui-smoke] two-card entry + shareable waiting room (ticket 41)…');
+    await runEntryAndWaitingPass(base, debugPort);
     console.log('[ui-smoke] render checks (Home → Lobby → Game, discards, chat)…');
     await runRenderChecks(base, debugPort);
     console.log('[ui-smoke] chat pill + modal dialog (ticket 20)…');

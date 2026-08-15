@@ -1,13 +1,40 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Game } from '../useGame';
 import { useLocale, type Locale } from '../i18n';
+import { inviteCodeFromUrl } from '../invite';
 import { ThemeToggle } from '../theme';
+
+/** The shared identity persists (ticket 41) so re-entry is one click; the
+ *  player id the server issues lives separately (sessionStorage, useGame). */
+const NAME_KEY = 'love-letter-name';
+
+function loadName(): string {
+  try {
+    return localStorage.getItem(NAME_KEY) ?? '';
+  } catch {
+    return ''; // storage denied — the session just doesn't remember
+  }
+}
 
 export function Home({ game }: { game: Game }) {
   const { t, tCode, locale, setLocale } = useLocale();
-  const [name, setName] = useState('');
+  const [name, setName] = useState<string>(loadName);
   const [capacity, setCapacity] = useState<'2' | '3' | '4'>('2');
-  const [roomCode, setRoomCode] = useState('');
+  const initialCode = inviteCodeFromUrl();
+  const [roomCode, setRoomCode] = useState(initialCode);
+  const [showCode, setShowCode] = useState(() => initialCode !== '');
+  // The card is highlighted only when the URL actually carried an invite.
+  const invited = initialCode !== '';
+
+  // Persist the name as it changes; the cards below stay enabled regardless —
+  // the name is only required at the moment of create/join.
+  useEffect(() => {
+    try {
+      localStorage.setItem(NAME_KEY, name);
+    } catch {
+      // storage denied — the session keeps the name in state
+    }
+  }, [name]);
 
   const create = () => {
     const trimmed = name.trim();
@@ -45,24 +72,25 @@ export function Home({ game }: { game: Game }) {
         <p className="error-banner" onClick={game.clearError}>{tCode(game.error.code, game.error.params)}</p>
       )}
 
-      <div className="panel">
-        <label>
-          {t('home.yourName')}
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('home.namePlaceholder')}
-            maxLength={20}
-            autoFocus
-            // iOS: autocorrect/autofill rewrite text inside controlled inputs
-            // (issue 09) — opt out of every mobile text-replacement layer.
-            autoCorrect="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            autoComplete="off"
-          />
-        </label>
+      <label className="name-field">
+        {t('home.yourName')}
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('home.namePlaceholder')}
+          maxLength={20}
+          autoFocus
+          // iOS: autocorrect/autofill rewrite text inside controlled inputs
+          // (issue 09) — opt out of every mobile text-replacement layer.
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          autoComplete="off"
+        />
+      </label>
 
+      <div className="panel card start-card">
+        <h2>{t('home.startCard')}</h2>
         <div className="row">
           <label>
             {t('home.players')}
@@ -76,25 +104,40 @@ export function Home({ game }: { game: Game }) {
             {t('home.createRoom')}
           </button>
         </div>
+      </div>
 
-        <div className="divider">{t('home.or')}</div>
+      {/* Join: the directory slot renders ticket 40's list when it lands;
+          until then the empty state is the answer to "is anything open?" */}
+      <div className={`panel card join-card${invited ? ' invited' : ''}`}>
+        <h2>{t('home.joinCard')}</h2>
 
-        <div className="row">
-          <input
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            placeholder={t('home.roomCode')}
-            maxLength={4}
-            className="code-input"
-            autoCorrect="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            autoComplete="off"
-          />
-          <button className="btn-primary" onClick={join} disabled={name.trim().length === 0 || roomCode.trim().length === 0}>
-            {t('home.joinRoom')}
-          </button>
+        <div className="directory-slot">
+          <p className="slot-header">{t('home.openTables')}</p>
+          <p className="muted slot-empty">{t('home.noOpenRooms')}</p>
         </div>
+
+        <button type="button" className="code-toggle" onClick={() => setShowCode((s) => !s)}>
+          {showCode ? t('home.hideCode') : t('home.haveCode')}
+        </button>
+
+        {showCode && (
+          <div className="row">
+            <input
+              value={roomCode}
+              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+              placeholder={t('home.roomCode')}
+              maxLength={4}
+              className="code-input"
+              autoCorrect="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button className="btn-primary" onClick={join} disabled={name.trim().length === 0 || roomCode.trim().length === 0}>
+              {t('home.joinRoom')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

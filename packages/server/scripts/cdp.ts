@@ -27,6 +27,9 @@ export interface CdpSession {
   setViewport(width: number, height: number): Promise<void>;
   /** Emulate prefers-reduced-motion (ticket 22: card moments must disable). */
   setReducedMotion(reduce: boolean): Promise<void>;
+  /** Emulate the system color scheme — pins `prefers-color-scheme` so theme
+   *  assertions don't depend on the host OS's appearance. */
+  setColorScheme(scheme: 'light' | 'dark'): Promise<void>;
   /** Bring the tab to the front — headless pages start hidden, which freezes
    *  CSS animation clocks; call before asserting animation-driven behavior. */
   bringToFront(): Promise<void>;
@@ -121,6 +124,13 @@ export async function openTabs(debugPort: number, count: number): Promise<CdpSes
       await send(
         'Emulation.setEmulatedMedia',
         { features: [{ name: 'prefers-reduced-motion', value: reduce ? 'reduce' : 'no-preference' }] },
+        sessionId,
+      );
+    },
+    setColorScheme: async (scheme: 'light' | 'dark') => {
+      await send(
+        'Emulation.setEmulatedMedia',
+        { features: [{ name: 'prefers-color-scheme', value: scheme }] },
         sessionId,
       );
     },
