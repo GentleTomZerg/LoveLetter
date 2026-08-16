@@ -1,8 +1,10 @@
-# 39 — Card counts in the rules manual
+# 5 — Card counts in the rules manual
 
-**What to build:** the manual's card section (`CardAbilityList` in Game.tsx, the ticket-34 second section) shows each card's name, rank, and effect — but not how many copies of it are in the deck. Add the per-card count so the manual answers "how many of each card are there?" (e.g. **Guard ×5**, **Princess ×1**). Deck composition is data in core (DESIGN Q2: "an extended deck is a config change"), so the counts render from that data, never from a hardcoded copy.
+**Legacy:** was #39 in the love-letter effort.
 
-**Blocked by:** none — the manual modal itself landed in ticket 34; this extends it. (Touches the same `CardAbilityList`; the old Abilities `<details>` is long gone.)
+**What to build:** the manual's card section (`CardAbilityList` in Game.tsx, the ticket 2 second section) shows each card's name, rank, and effect — but not how many copies of it are in the deck. Add the per-card count so the manual answers "how many of each card are there?" (e.g. **Guard ×5**, **Princess ×1**). Deck composition is data in core (DESIGN Q2: "an extended deck is a config change"), so the counts render from that data, never from a hardcoded copy.
+
+**Blocked by:** none — the manual modal itself landed in ticket 2; this extends it. (Touches the same `CardAbilityList`; the old Abilities `<details>` is long gone.)
 
 **Status:** resolved
 
@@ -11,7 +13,7 @@
 - [x] **ui-smoke** (`packages/server/scripts/ui-smoke.ts`, `fixedStage` step 3b): after the existing "eight cards" assertion, add two checks — the first `.abilities-list li` (Guard) contains `×5`, the last (Princess) contains `×1`.
 - [x] Verify: core + client tests, typecheck, server smoke, ui-smoke green.
 
-**Deliberately unchanged (grilling decisions):** the quick-rules setup bullet stays "Setup: 16 cards, 1 removed face-down; with 2 players, 3 more are removed face-up." (the composition lives one section down; ticket 34's rule is "concise — a manual, not a rulebook"); card name/effect text, rank-keyed thumbs, and the rulings section are untouched. `cardName()` is *not* touched — it is reused in log entries and the hand, where a count would be wrong.
+**Deliberately unchanged (grilling decisions):** the quick-rules setup bullet stays "Setup: 16 cards, 1 removed face-down; with 2 players, 3 more are removed face-up." (the composition lives one section down; ticket 2's rule is "concise — a manual, not a rulebook"); card name/effect text, rank-keyed thumbs, and the rulings section are untouched. `cardName()` is *not* touched — it is reused in log entries and the hand, where a count would be wrong.
 
 ## Comments
 

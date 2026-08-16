@@ -1,4 +1,6 @@
-# 10 — Home: Join-room button half-clipped on narrow phone screens
+# 5 — Home: Join-room button half-clipped on narrow phone screens
+
+**Legacy:** was #10 in the love-letter effort.
 
 **What to build:** make the Home page's join row fit phone viewports so the Join room button is never cut off at the screen edge.
 

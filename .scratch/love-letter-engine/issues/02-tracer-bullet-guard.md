@@ -1,8 +1,10 @@
-# 02 — Tracer bullet: a complete Guard-only match
+# 2 — Tracer bullet: a complete Guard-only match
+
+**Legacy:** was #2 in the love-letter effort.
 
 **What to build:** the thinnest end-to-end path that plays a full match: two people create/join a room, it auto-starts, a round deals out hands, someone plays a **Guard** naming a card and guessing a target, the guess resolves, the round ends, a token is awarded, and the match ends at the token target with rematch available. This is the vertical spine — every layer works (engine → server → client) with exactly one card, so later tickets deepen instead of rewire.
 
-**Blocked by:** 01
+**Blocked by:** 1
 
 **Status:** resolved
 
@@ -22,7 +24,7 @@
 - **One real bug caught by the smoke:** `reduceView` didn't increment tokens on `roundEnded`, so the client scoreboard would have stayed at 0 forever. Fixed with a regression assertion.
 - **Join protocol:** the server sends `hello` → `snapshot` (private view incl. own hand) → events; a joiner's snapshot already reflects their own join/auto-start, so the join batch goes only to pre-existing sockets (no double-apply). Documented in DESIGN.md.
 - **Edge ruled:** two players reaching the token target in the same round (possible via full-tie, ruling 1) → first in seat order wins the match. Recorded as ADR-0002.
-- **Out of scope here (later tickets):** non-Guard cards are deliberate no-ops in the engine (ticket 03 deepens via the per-rank dispatch, not a rewire); disconnect grace/auto-fold, reconnect replay, and chat (ticket 05); full random-play simulation scale-up (ticket 04); richer Game screen + all choice prompts (ticket 06).
+- **Out of scope here (later tickets):** non-Guard cards are deliberate no-ops in the engine (ticket 3 deepens via the per-rank dispatch, not a rewire); disconnect grace/auto-fold, reconnect replay, and chat (love-letter-server/01); full random-play simulation scale-up (ticket 4); richer Game screen + all choice prompts (love-letter-client/01).
 - **Remaining manual step:** the two-browser-tab check — `npm run dev`, open `http://localhost:5173` in two tabs, create/join a 2-player room, play a Guard-only match to 7 tokens, rematch. Left unchecked since it needs real tabs; the smoke covers the same path programmatically.
 
 **Verified by hand (2025-08-09):** two-tab playthrough at `http://localhost:5173` — create/join auto-start, Guard-only match to 7 tokens with correct guess/elimination/round-end flow, scoreboard + public log rendering, rematch with same seats and reset tokens, and the error banner on an illegal play all behaved. Ticket complete.

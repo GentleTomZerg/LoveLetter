@@ -1,4 +1,6 @@
-# 13 — Discards panel: shadowed piles + face-down hand-count
+# 7 — Discards panel: shadowed piles + face-down hand-count
+
+**Legacy:** was #13 in the love-letter effort.
 
 **What to build:** each player's row in the Discards panel should show their discarded cards as a shadowed, overlapping pile (reads like a real pile of cards), and beside it a small stack of face-down card backs showing how many cards that player currently holds.
 
@@ -39,10 +41,10 @@ Reported from play: it's unclear what's going on at the table; a pile that looks
 
 ## Comments
 
-Related to 14 (unify the scoreboard into this panel) — both target the same table state and are best implemented together so the row layout is designed once.
+Related to love-letter-client/08 (unify the scoreboard into this panel) — both target the same table state and are best implemented together so the row layout is designed once.
 
 **Fixed (2025):** `PlayerView` gained `handCount` (`packages/core/src/view.ts`), populated in `buildView` and folded through every hand-size event — deal, draw (including the empty-deck burn draw), play, Prince/Countess discard, King trade, reveal, rematch reset. The King trade needed the event to carry the received hand's size: hands can be unequal (e.g. after a forced Countess discard), so `handTraded` now includes a public `count` field (`types.ts`, `engine.ts`; the server's privacy filter spreads the event and only nulls `card`, so the count reaches everyone). Unit tests: a dedicated hand-count lifecycle test plus the existing full-round test extended (`view.test.ts`), and the King test asserts the new count (`king.test.ts`).
 
-UI: the `Discards` rows now render the discard pile as an overlapping stack with a drop shadow (`margin-left: -1.3rem` + `box-shadow`), and a `hand` group with face-down `back-light.png` cards matching `handCount` plus an explicit count badge (dash-free zero). One rename during implementation: the in-row group is `hand-info`, not `hand` — the bare `.hand` class would inherit the table-hand rule's `min-height: 13rem`. ui-smoke asserts both seats show counts 0-2, face-down backs equal total cards held, and the reload-resume snapshot now includes hand counts (replay fidelity). Implemented together with 14's unified panel — see 14's notes.
+UI: the `Discards` rows now render the discard pile as an overlapping stack with a drop shadow (`margin-left: -1.3rem` + `box-shadow`), and a `hand` group with face-down `back-light.png` cards matching `handCount` plus an explicit count badge (dash-free zero). One rename during implementation: the in-row group is `hand-info`, not `hand` — the bare `.hand` class would inherit the table-hand rule's `min-height: 13rem`. ui-smoke asserts both seats show counts 0-2, face-down backs equal total cards held, and the reload-resume snapshot now includes hand counts (replay fidelity). Implemented together with love-letter-client/08's unified panel — see that ticket's notes.
 
 Verification: typecheck clean across workspaces, 117 core tests green, client build green, ui-smoke green (narrow phone layout, render checks, full 2p match, 3p/4p, reload/resume with hand counts restored).

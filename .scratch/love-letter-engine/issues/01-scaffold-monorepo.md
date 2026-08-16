@@ -1,4 +1,6 @@
-# 01 — Scaffold monorepo and tooling
+# 1 — Scaffold monorepo and tooling
+
+**Legacy:** was #1 in the love-letter effort.
 
 **What to build:** a new npm-workspaces monorepo with three empty-but-compiling packages (`core`, `server`, `client`), shared TypeScript config, Vitest wired into `core`, dev scripts that run server and client together, and a first `git init` + baseline commit. Nothing plays yet — this is the foundation every other ticket lands on.
 

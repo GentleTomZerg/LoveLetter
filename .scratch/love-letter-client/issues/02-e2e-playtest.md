@@ -1,8 +1,10 @@
-# 07 — End-to-end playtest and polish
+# 2 — End-to-end playtest and polish
+
+**Legacy:** was #7 in the love-letter effort.
 
 **What to build:** a human-playable full game, verified by hand — two (or more) browser tabs, a complete match with all 8 cards, every ruling exercised, then fixes and functional-clean polish. This is the "friends can genuinely play this" gate.
 
-**Blocked by:** 06
+**Blocked by:** 1
 
 **Status:** resolved
 
@@ -18,7 +20,7 @@
 
 **Implemented (2025):** the playtest gate is automated in `npm run ui-smoke` — headless-Chrome CDP scenarios that play the real client end to end, now four of them (`packages/server/scripts/ui-smoke.ts` + shared plumbing in `scripts/cdp.ts`):
 
-1. **render** — Home → Lobby → Game by room code, scoreboard, discard piles, chat across tabs (ticket 06 claims; screenshots saved to a temp dir for a human look).
+1. **render** — Home → Lobby → Game by room code, scoreboard, discard piles, chat across tabs (ticket 1 claims; screenshots saved to a temp dir for a human look).
 2. **fullMatch** — a complete 2-player match to the 7-token target, rematch through the UI (tokens reset, round 1 again). Because a 2-player round deals only a few cards when it ends by early elimination, the single-copy ranks (King/Countess/Princess) can skip an entire match — the scenario keeps playing rematches until all eight cards have appeared in the public log (bounded at 5).
 3. **multiPlayer** — 3- and 4-player rooms fill to capacity, auto-start, and play to match end at the right token targets (5 / 5 and 4 / 4).
 4. **reload** — a mid-match tab reload (the real disconnect path): the seat resumes from the snapshot, reproduces the public table state exactly, chat history comes back, and the tab keeps playing.

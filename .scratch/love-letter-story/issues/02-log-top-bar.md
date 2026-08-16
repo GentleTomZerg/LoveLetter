@@ -1,12 +1,14 @@
-# 21 — Log moves to a fixed top bar
+# 2 — Log moves to a fixed top bar
 
-**What to build:** the latest-event strip + expandable log (ticket 19) moves out of the bottom of the game column and becomes a full-width bar fixed at the top of the screen, so the latest event is visible without scrolling at any screen size. The game content sits below it. Clicking the bar still expands the full history in place.
+**Legacy:** was #21 in the love-letter effort.
 
-**Blocked by:** None — can start immediately (extends the resolved ticket 19 component).
+**What to build:** the latest-event strip + expandable log (ticket 1) moves out of the bottom of the game column and becomes a full-width bar fixed at the top of the screen, so the latest event is visible without scrolling at any screen size. The game content sits below it. Clicking the bar still expands the full history in place.
+
+**Blocked by:** None — can start immediately (extends the resolved ticket 1 component).
 
 **Status:** resolved
 
-- [x] Fixed full-width top bar: the strip content is unchanged from ticket 19 — newest entry rendered via `t`, mini card thumbnail when the entry carries a rank, muted placeholder when the log is empty, activity lines (disconnect/reconnect) participating — but the bar now floats at the top of the viewport and the game content gains top padding so the header and table sit below it
+- [x] Fixed full-width top bar: the strip content is unchanged from ticket 1 — newest entry rendered via `t`, mini card thumbnail when the entry carries a rank, muted placeholder when the log is empty, activity lines (disconnect/reconnect) participating — but the bar now floats at the top of the viewport and the game content gains top padding so the header and table sit below it
 - [x] Click → the full history drops in a panel fixed beneath the bar (newest-first, scrollable, `.log` max-height applies to the expanded panel); click again → collapse; on phones (≤640px) the expanded panel is near-fullscreen, following the chat-dialog precedent
 - [x] The bar stays visible while the table scrolls under it; the expanded panel and the scroll position behave on both desktop and narrow phones
 - [x] ui-smoke: update `runLogStrip` for the new position — the bar is visible without scrolling, expand/collapse still works, the expanded panel renders; no error banners

@@ -1,6 +1,8 @@
-# 15 — i18n plumbing: structured log entries, typed dictionaries, locale
+# 1 — i18n plumbing: structured log entries, typed dictionaries, locale
 
-**What to build:** the localization foundation (ADRs 0003 + 0004) with **zero visible change** — every string the game renders moves from hardcoded English into a typed `en` dictionary, the log entries become structured `{kind, params}`, and the client gains locale detection + a manual toggle. `zh` is a stub (same strings as `en`) — real translations are ticket 17.
+**Legacy:** was #15 in the love-letter effort.
+
+**What to build:** the localization foundation (ADRs 0003 + 0004) with **zero visible change** — every string the game renders moves from hardcoded English into a typed `en` dictionary, the log entries become structured `{kind, params}`, and the client gains locale detection + a manual toggle. `zh` is a stub (same strings as `en`) — real translations are ticket 3.
 
 **Blocked by:** none — start immediately.
 
@@ -23,7 +25,7 @@
 **Implemented (2025):** all boxes green — typecheck clean, 136 core tests, smoke + ui-smoke OK.
 
 - **Core:** `LogEntry {id, kind, params}` (no `text`); new kinds `guard`/`baron`/`prince`/`king`; `info` lines carry a `what` sub-key; `ViewState.roster` (id → name, never shrinks) resolves historical lines after a leave; English text fully removed from `reduceView` (the `CARD_INFO` import went with it).
-- **Client:** `src/i18n/` — `messages.ts` (typed `en`/`zh`, `zh` is `Record<MessageKey, string>` so a missing key is a compile error), `cards.ts` (names/effects per locale, `en` sourced from core's `CARD_INFO`), `index.tsx` (`detectLocale`, `t`, `LocaleProvider`, `useLocale`), `logFormat.ts` (the single formatter for all log entries; feeds ticket 19's strip later). All screens render through `t()`/`cardName`/`cardEffect`; Home has the EN | 中文 toggle (persisted).
+- **Client:** `src/i18n/` — `messages.ts` (typed `en`/`zh`, `zh` is `Record<MessageKey, string>` so a missing key is a compile error), `cards.ts` (names/effects per locale, `en` sourced from core's `CARD_INFO`), `index.tsx` (`detectLocale`, `t`, `LocaleProvider`, `useLocale`), `logFormat.ts` (the single formatter for all log entries; feeds love-letter-story/01's strip later). All screens render through `t()`/`cardName`/`cardEffect`; Home has the EN | 中文 toggle (persisted).
 - **Zero-visible-change audit:** English output is byte-identical to before, except two hover tooltips reworded to avoid plurals per ADR-0004 ("Discarded: {n}", "Hand: {n}") and the new toggle. ui-smoke's DOM-text assertions (e.g. `'Rematch'`) pass unchanged.
 - **Tests:** `view.test.ts` text assertions → kind/params (`toMatchObject`); `smoke.ts` match-log check → `params.winnerId`; roster asserted in `buildView` and after a leave.
 - **Deliberate no (Q16):** entries stay one-per-event — no chain enrichment (see ADR-0003 note).

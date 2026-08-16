@@ -1,4 +1,6 @@
-# 18 — Card rank badge to the top-right
+# 9 — Card rank badge to the top-right
+
+**Legacy:** was #18 in the love-letter effort.
 
 **What to build:** the white rank pill on hand cards moves from the top-left to the top-right corner (grilling Q1). The art PNGs already carry a stylized rank numeral, so the pill stops stacking on it.
 

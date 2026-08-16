@@ -1,8 +1,10 @@
-# 19 — Latest-event strip + expandable log
+# 1 — Latest-event strip + expandable log
+
+**Legacy:** was #19 in the love-letter effort.
 
 **What to build:** the game log collapses to a single "latest event" line under the table; clicking expands the full history in place (grilling Q2, Q10, Q11). The strip renders the newest entry from its params with a mini card thumbnail; room-activity lines stay merged.
 
-**Blocked by:** 15 (needs structured entries + dictionary)
+**Blocked by:** love-letter-i18n/01 (needs structured entries + dictionary)
 
 **Status:** resolved
 
@@ -15,7 +17,7 @@
 
 ## Comments
 
-**Decisions (grilling session 2025):** Q2 two separate elements (log strip stays under the table, chat floats — see ticket 20). Q10 show the single newest line rendered from params with a thumbnail, not a plain-text line or a ticker. Q11 expand in place, newest-first. Log entries stay one-per-event (Q16 declined chain enrichment — see ADR-0003 note).
+**Decisions (grilling session 2025):** Q2 two separate elements (log strip stays under the table, chat floats — see love-letter-client/10). Q10 show the single newest line rendered from params with a thumbnail, not a plain-text line or a ticker. Q11 expand in place, newest-first. Log entries stay one-per-event (Q16 declined chain enrichment — see ADR-0003 note).
 
 **Implemented (2025):** the `Log` panel is now `<details class="panel log-panel">` — a `<summary class="log-strip">` shows the newest entry (via `t`, with a mini `CardThumb` when `entryRank` finds a card rank) and a muted placeholder when both sequences are empty; clicking expands the full newest-first history in place with its 16rem scroll height kept, click again to collapse. Activity lines ride the strip through `latestLogEntry` — by construction the strip is always the top of the expanded list (strip == first li asserted in ui-smoke).
 

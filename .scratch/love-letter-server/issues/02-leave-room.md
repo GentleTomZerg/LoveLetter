@@ -1,4 +1,6 @@
-# 11 — No way to leave a room; a closed tab keeps the seat forever
+# 2 — No way to leave a room; a closed tab keeps the seat forever
+
+**Legacy:** was #11 in the love-letter effort.
 
 **What to build:** an intentional "leave" plus a visible no-show rule, so a player who quits actually leaves — closing the browser currently keeps the seat occupied (grace → auto-fold → seat kept next round), with no sign to the table that anyone is gone and no way to free a seat.
 

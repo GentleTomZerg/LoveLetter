@@ -1,4 +1,6 @@
-# 12 — Card abilities invisible on touch screens (no hover)
+# 6 — Card abilities invisible on touch screens (no hover)
+
+**Legacy:** was #12 in the love-letter effort.
 
 **What to build:** make every card's effect text readable on phones — the rules text currently lives in `title` tooltips, which only appear on desktop mouse hover.
 

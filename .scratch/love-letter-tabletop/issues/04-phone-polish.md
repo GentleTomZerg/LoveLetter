@@ -1,8 +1,10 @@
-# 36 — Phone polish: seat piles, seat header, animation pacing, draw sequencing, center table
+# 4 — Phone polish: seat piles, seat header, animation pacing, draw sequencing, center table
 
-**What to build:** five fixes from a real iPhone playtest of the ticket-35 layout. ① Opponent discard piles must read as an overlapping **pile** when they accumulate — on narrow phones the wrap broke the overlap (a wrapped row's first card pulled left, so rows looked jagged, not stacked) — give every card the same overlap and compensate the row start, so rows wrap cleanly (two rows on phones). ② The seat header — **name + hearts tokens (+ badges) share one line** so tiles stay short. ③ The card-moment animations are **too quick** — slow the stage durations (STAGE_MS) by roughly a third. ④ The **draw pop** (ticket 28's in-hand card pop) must **wait for the previous play's scene to fully drain** — it currently fires while the last animation is still playing. ⑤ The **center table still takes too much space** — collapse it to one compact horizontal row (deck stack + burned card + 2p face-ups) and drop the text labels (the tooltips and the manual carry that info).
+**Legacy:** was #36 in the love-letter effort.
 
-**Blocked by:** none — a follow-up polish pass on the ticket-35 dock layout.
+**What to build:** five fixes from a real iPhone playtest of the ticket 3 layout. ① Opponent discard piles must read as an overlapping **pile** when they accumulate — on narrow phones the wrap broke the overlap (a wrapped row's first card pulled left, so rows looked jagged, not stacked) — give every card the same overlap and compensate the row start, so rows wrap cleanly (two rows on phones). ② The seat header — **name + hearts tokens (+ badges) share one line** so tiles stay short. ③ The card-moment animations are **too quick** — slow the stage durations (STAGE_MS) by roughly a third. ④ The **draw pop** (love-letter-story/07's in-hand card pop) must **wait for the previous play's scene to fully drain** — it currently fires while the last animation is still playing. ⑤ The **center table still takes too much space** — collapse it to one compact horizontal row (deck stack + burned card + 2p face-ups) and drop the text labels (the tooltips and the manual carry that info).
+
+**Blocked by:** none — a follow-up polish pass on the ticket 3 dock layout.
 
 **Status:** resolved
 
@@ -15,6 +17,6 @@
 
 ## Comments
 
-**Source (2025 playtest):** real iPhone feedback on the ticket-35 layout. The pile issue is geometry: with `:first-child { margin-left: 0 }`, the first card of each *wrapped* row has no overlap pull, so rows misalign and the pile reads as a jagged grid on narrow tiles. Uniform margins + a compensated row start fix it without shrinking the thumbs (Q3(a)'s deduction surface stays).
+**Source (2025 playtest):** real iPhone feedback on the ticket 3 layout. The pile issue is geometry: with `:first-child { margin-left: 0 }`, the first card of each *wrapped* row has no overlap pull, so rows misalign and the pile reads as a jagged grid on narrow tiles. Uniform margins + a compensated row start fix it without shrinking the thumbs (Q3(a)'s deduction surface stays).
 
-**Implementation notes:** the draw-pop deferral keys on `scenes.busy`, so it needs no scene machinery — the pop is still a pure CSS moment (ticket 28), just gated. The center-table labels were the vertical space hogs (a text line each); the physical-card metaphor (ticket 33 Q8) survives without them. `runDrawPop` still passes — it polls until the `drawn` class appears, which now happens after the preceding scene drains.
+**Implementation notes:** the draw-pop deferral keys on `scenes.busy`, so it needs no scene machinery — the pop is still a pure CSS moment (love-letter-story/07), just gated. The center-table labels were the vertical space hogs (a text line each); the physical-card metaphor (ticket 1 Q8) survives without them. `runDrawPop` still passes — it polls until the `drawn` class appears, which now happens after the preceding scene drains.

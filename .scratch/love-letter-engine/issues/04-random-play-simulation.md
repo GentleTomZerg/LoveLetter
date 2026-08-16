@@ -1,8 +1,10 @@
-# 04 — Engine: full-match random-play simulation
+# 4 — Engine: full-match random-play simulation
+
+**Legacy:** was #4 in the love-letter effort.
 
 **What to build:** a stress harness that plays thousands of full matches (2, 3, and 4 players) with random legal moves, asserting the engine never throws, never deadlocks, and always terminates with a legal round/match result. This is the confidence net that catches rules bugs hiding in interactions.
 
-**Blocked by:** 03
+**Blocked by:** 3
 
 **Status:** resolved
 

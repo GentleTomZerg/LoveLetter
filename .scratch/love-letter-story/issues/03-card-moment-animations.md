@@ -1,8 +1,10 @@
-# 22 — Card-moment animations
+# 3 — Card-moment animations
+
+**Legacy:** was #22 in the love-letter effort.
 
 **What to build:** card events animate the moment they land live, so the outcome of a play is legible at a glance. A card thumbnail leaves the acting player's seat and travels to where the card goes — the target's seat for targeting plays (Guard/Baron/Prince/King), that player's discard pile for untargeted plays (Princess, forced Countess); reveals flash the card at the seat; eliminations dim the seat in place; round/match wins get a short banner fade. Beats queue one at a time; the sequence itself is the verdict — no verdict captions, no cause/effect enrichment.
 
-**Blocked by:** None — can start immediately (client-only; the animation layer measures seat positions at animation start, so it adapts to the ticket 21 layout whether or not 21 lands first).
+**Blocked by:** None — can start immediately (client-only; the animation layer measures seat positions at animation start, so it adapts to the ticket 2 layout whether or not ticket 2 lands first).
 
 **Status:** resolved
 

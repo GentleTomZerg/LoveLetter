@@ -1,8 +1,10 @@
-# 17 — zh-Hans content
+# 3 — zh-Hans content
 
-**What to build:** the actual Simplified Chinese translations (ADR-0004: one `zh` key). All content the plumbing in tickets 15–16 routed through the dictionary.
+**Legacy:** was #17 in the love-letter effort.
 
-**Blocked by:** 15, 16
+**What to build:** the actual Simplified Chinese translations (ADR-0004: one `zh` key). All content the plumbing in tickets 1–2 routed through the dictionary.
+
+**Blocked by:** 1, 2
 
 **Status:** resolved
 

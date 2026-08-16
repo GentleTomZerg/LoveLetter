@@ -1,4 +1,6 @@
-# 09 — iOS Safari: typing in the Home inputs auto-types extra characters
+# 4 — iOS Safari: typing in the Home inputs auto-types extra characters
+
+**Legacy:** was #9 in the love-letter effort.
 
 **What to build:** fix the iPhone input bug where typing in the Home screen's name (and possibly room-code) field produces extra, repeated characters.
 

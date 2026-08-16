@@ -1,8 +1,10 @@
-# 16 — Server errors as codes over the wire
+# 2 — Server errors as codes over the wire
+
+**Legacy:** was #16 in the love-letter effort.
 
 **What to build:** stop sending English error text from the server (ADR-0005). Engine errors, protocol errors, and room-closed reasons become codes with optional params; the client maps them through the locale dictionary.
 
-**Blocked by:** 15
+**Blocked by:** 1
 
 **Status:** resolved
 
@@ -20,5 +22,5 @@
 
 - **Core:** all 27 engine `err('english')` strings → stable kebab codes (`not_your_turn`, `countess_forced`, `fold_last_player`, …); `WireParams` exported; protocol `error {code, params?}` / `roomClosed {code, params?}`.
 - **Server:** `sendError(ws, code, params?)` and `closeRoom(ctx, room, code, params?)`; app-layer strings → codes (`already_in_room`, `room_not_found`, `no_seat_found`, …); `unknown_packet` carries `{type}`; roomClosed codes `player_left` / `no_show` carry `{name}`. `params` omitted when absent (`exactOptionalPropertyTypes`).
-- **Client:** `useGame` stores `{code, params}` (new `WireError` shape); App + Home render via the new `tCode(code, params)` — wire codes map to `error.<code>` dictionary keys with a defensive `error.unknown` fallback (an older client against a newer server can't crash `t()`: it now falls back to English, then the key). All 40+ error strings live in the en dictionary; zh stubs until ticket 17.
+- **Client:** `useGame` stores `{code, params}` (new `WireError` shape); App + Home render via the new `tCode(code, params)` — wire codes map to `error.<code>` dictionary keys with a defensive `error.unknown` fallback (an older client against a newer server can't crash `t()`: it now falls back to English, then the key). All 40+ error strings live in the en dictionary; zh stubs until ticket 3.
 - **Tests:** deck/fold/leave error-text regexes → exact code equality; smoke error-path and roomClosed assertions → `err.code` / `closed.code` equality.

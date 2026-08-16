@@ -1,4 +1,6 @@
-# 14 — Unify turn + hearts (scoreboard) into the Discards panel
+# 8 — Unify turn + hearts (scoreboard) into the Discards panel
+
+**Legacy:** was #14 in the love-letter effort.
 
 **What to build:** merge the two stacked table panels — the `Scoreboard` (names, hearts/tokens won, turn badge, protected/out) and the `Discards` panel — into one unified per-player table: a single panel where each row shows name, hearts won, whose turn it is, discards, and hand size.
 
@@ -16,11 +18,11 @@
   - name (self marked "you")
   - hearts won: `tokens / tokenTarget`
   - turn state: highlight the active player's row instead of relying on a small badge (keep an explicit "turn" marker too, so it isn't color-only — see accessibility)
-  - discards + hand size (the shadowed pile + face-down hand backs from issue 13)
+  - discards + hand size (the shadowed pile + face-down hand backs from ticket 7)
   - existing `protected` / `out` badges
 - **Turn indicator** — pick one canonical visual per row (row highlight + marker). Decide what happens to the redundant in-table `turn-banner`: keep it only as the acting player's call-to-action, or drop it in favor of the row highlight — but don't leave two sources that could contradict.
 - Keep the layout stable at 2–4 players and the existing sub-900px collapse. Chat panel untouched.
-- No behavior change: still pure render from `ViewState`; no new data needed beyond issue 13's `handCount`.
+- No behavior change: still pure render from `ViewState`; no new data needed beyond ticket 7's `handCount`.
 
 ## Acceptance
 
@@ -33,10 +35,10 @@
 
 ## Comments
 
-Builds on 13's row content (shadowed discards + hand backs) — implement together so the row layout is designed once.
+Builds on love-letter-client/07's row content (shadowed discards + hand backs) — implement together so the row layout is designed once.
 
 **Fixed (2025):** `Scoreboard` and `Discards` are now one `TablePanel` (`Game.tsx`), a single `.panel.scoreboard` titled “Table” with one `.seat` row per player: name (+ “(you)”), hearts `♥ tokens / tokenTarget`, the turn pill, protected/out badges, the shadowed discard pile, and the face-down hand backs + count from 13. The old chip-style `.seat` CSS became row-style (column panel, bordered rows).
 
-Turn signal: the scoreboard's `turn-badge` moved into the unified row and the active player's row gets a highlight (`border-color: var(--ok)` + ring) *plus* the “turn” pill — never color alone. The in-table “It's your turn — play a card.” banner stays as the acting player's call-to-action (it's a CTA, not a table-state indicator), so the per-row pill is the single canonical state signal. ui-smoke asserts exactly one `.seat.turn` at round start, and that no bare `.hand` class exists inside seats (the min-height collision guard from 13). Reload/resume snapshot still passes with hand counts included.
+Turn signal: the scoreboard's `turn-badge` moved into the unified row and the active player's row gets a highlight (`border-color: var(--ok)` + ring) *plus* the “turn” pill — never color alone. The in-table “It's your turn — play a card.” banner stays as the acting player's call-to-action (it's a CTA, not a table-state indicator), so the per-row pill is the single canonical state signal. ui-smoke asserts exactly one `.seat.turn` at round start, and that no bare `.hand` class exists inside seats (the min-height collision guard from ticket 7). Reload/resume snapshot still passes with hand counts included.
 
 Verification: typecheck clean across workspaces, 117 core tests green, client build green, ui-smoke green (all scenarios, no error banners).
